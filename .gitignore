@@ -1,0 +1,4 @@
+config.py
+tradetools.db
+__pycache__/
+*.pyc
