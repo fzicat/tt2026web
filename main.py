@@ -4,6 +4,7 @@ from rich.layout import Layout
 from rich.panel import Panel
 from rich.text import Text
 from rich.theme import Theme
+from rich.table import Table
 import sys
 import os
 import requests
@@ -59,7 +60,14 @@ class IBKRModule(Module):
         if cmd in ['q', 'quit']:
             self.app.switch_module(MainModule(self.app))
         elif cmd in ['h', 'help']:
-            self.output_content = "IBKR commands:\n - import (i): Import daily trades\n - import w (i w): Import weekly trades\n - quit (q): Return to main menu\n - help (h): Show this message"
+            self.output_content = "IBKR commands:\n - import (i): Import daily trades\n - import w (i w): Import weekly trades\n - p <symbol>: List positions for a symbol\n - quit (q): Return to main menu\n - help (h): Show this message"
+        elif cmd.startswith('p '):
+            parts = command.split()
+            if len(parts) >= 2:
+                symbol = parts[1].upper()
+                self.list_positions(symbol)
+            else:
+                self.output_content = "[error]Usage: p <symbol>[/]"
         elif cmd in ['i', 'import']:
             self.import_trades(config.QUERY_ID_DAILY, "Daily")
         elif cmd in ['i w', 'import w', 'import weekly']:
@@ -162,6 +170,35 @@ class IBKRModule(Module):
         except Exception as e:
             self.output_content = f"[error]Error parsing XML or saving to DB: {e}[/]"
 
+    def list_positions(self, symbol):
+        try:
+            df = db_handler.get_trades_by_symbol(symbol)
+            if df.empty:
+                self.output_content = f"[info]No trades found for {symbol}[/]"
+                return
+
+            table = Table(title=f"Positions: {symbol}", expand=True)
+            table.add_column("Date", style="cyan")
+            table.add_column("Desc")
+            table.add_column("Qty", justify="right", style="magenta")
+            table.add_column("Price", justify="right", style="green")
+            table.add_column("Comm", justify="right")
+            table.add_column("O/C", justify="center")
+
+            for _, row in df.iterrows():
+                table.add_row(
+                    str(row['dateTime']),
+                    str(row['description']),
+                    f"{row['quantity']:.0f}" if pd.notnull(row['quantity']) else "",
+                    f"{row['tradePrice']:.2f}" if pd.notnull(row['tradePrice']) else "",
+                    f"{row['ibCommission']:.2f}" if pd.notnull(row['ibCommission']) else "",
+                    str(row['openCloseIndicator'])
+                )
+            
+            self.output_content = table
+        except Exception as e:
+            self.output_content = f"[error]Error listing positions: {e}[/]"
+
     def get_output(self):
         return self.output_content
 
@@ -207,9 +244,15 @@ class TradeToolsApp:
         # The original code used Text(..., style=...)
         # I will change it to Text.from_markup to support colors in output
         
-        output_str = self.active_module.get_output()
+        output_data = self.active_module.get_output()
+        # Handle both string (markup) and Renderable (like Table)
+        if isinstance(output_data, str):
+            content = Text.from_markup(output_data)
+        else:
+            content = output_data if output_data else ""
+
         body_panel = Panel(
-            Text.from_markup(output_str) if output_str else "",
+            content,
             title="Output",
             border_style="panel.border",
             style="on #282828"

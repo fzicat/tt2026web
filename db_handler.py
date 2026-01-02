@@ -57,3 +57,24 @@ def save_trade(trade_data):
         return False
     finally:
         conn.close()
+
+def get_trades_by_symbol(symbol):
+    """
+    Retrieves trades for a specific symbol.
+    Returns a pandas DataFrame with selected columns.
+    """
+    conn = get_connection()
+    try:
+        query = '''
+            SELECT dateTime, description, quantity, tradePrice, ibCommission, openCloseIndicator 
+            FROM trades 
+            WHERE symbol = ? OR underlyingSymbol = ?
+            ORDER BY dateTime DESC
+        '''
+        df = pd.read_sql_query(query, conn, params=(symbol, symbol))
+        return df
+    except Exception as e:
+        print(f"Error retrieving trades for {symbol}: {e}")
+        return pd.DataFrame()
+    finally:
+        conn.close()
