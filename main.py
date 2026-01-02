@@ -53,14 +53,129 @@ class MainModule(Module):
 class IBKRModule(Module):
     def __init__(self, app):
         super().__init__(app)
+        self.trades_df = pd.DataFrame()
         self.output_content = "IBKR Module Active\nType 'help' or 'h' for a list of commands."
+        self.load_trades()
 
+        self.load_trades()
+
+    def load_trades(self):
+        self.trades_df = db_handler.fetch_all_trades_as_df()
+        if not self.trades_df.empty:
+            self.calculate_pnl()
+        count = len(self.trades_df)
+        self.app.console.print(f"[info]Trades loaded: {count}[/]")
+
+    def calculate_pnl(self):
+        if self.trades_df.empty:
+            return
+
+        # Initialize columns
+        self.trades_df['realized_pnl'] = 0.0
+        self.trades_df['remaining_qty'] = 0.0
+
+        # Inventory: symbol -> list of dicts {idx, qty, price}
+        inventory = {}
+
+        for idx, row in self.trades_df.iterrows():
+            symbol = row['symbol']
+            qty = row['quantity']
+            price = row['tradePrice']
+            multiplier = row['multiplier']
+            
+            # Ensure safe floats
+            qty = float(qty) if qty is not None else 0.0
+            price = float(price) if price is not None else 0.0
+            multiplier = float(multiplier) if multiplier is not None else 1.0
+
+            if symbol not in inventory:
+                inventory[symbol] = []
+
+            # Determine if we are increasing or decreasing/closing position
+            # We assume FIFO matching against opposite sign
+            
+            # If inventory is empty, always open/add
+            if not inventory[symbol]:
+                self.trades_df.at[idx, 'remaining_qty'] = qty
+                inventory[symbol].append({'idx': idx, 'qty': qty, 'price': price})
+                continue
+
+            # Check head of inventory
+            head = inventory[symbol][0]
+            # Same sign means adding to position
+            if (qty > 0 and head['qty'] > 0) or (qty < 0 and head['qty'] < 0):
+                self.trades_df.at[idx, 'remaining_qty'] = qty
+                inventory[symbol].append({'idx': idx, 'qty': qty, 'price': price})
+            else:
+                # Opposite sign: Close/Reduce position
+                qty_to_process = qty # e.g. -100 (Sell)
+                total_pnl = 0.0
+
+                while qty_to_process != 0 and inventory[symbol]:
+                    item = inventory[symbol][0]
+                    open_qty = item['qty']   # e.g. 50 (Buy)
+                    open_price = item['price']
+                    open_idx = item['idx']
+
+                    # Check match amount
+                    # We are reducing open_qty by some amount
+                    # signs are opposite. 
+                    
+                    if abs(qty_to_process) >= abs(open_qty):
+                        # Fully consume this open lot
+                        # Trade Qty consumes entire Open Lot
+                        # e.g. Selling -100 consumes Buy 50.
+                        # Used portion of this trade is -open_qty (to match magnitude)
+                        # Actually the amount of THIS trade used is just the negation of the open amount matched? 
+                        # No, magnitude is same.
+                        
+                        # PnL = -(ClosePrice - OpenPrice) * (ActiveClosingQty) * Multiplier
+                        # ActiveClosingQty here has same sign as qty_to_process, magnitude of open_qty
+                        
+                        match_qty = -open_qty # The amount of the current trade used to close the open lot
+                        
+                        term_pnl = -(price - open_price) * match_qty * multiplier
+                        total_pnl += term_pnl
+                        
+                        qty_to_process -= match_qty
+                        
+                        # Update matched open lot
+                        self.trades_df.at[open_idx, 'remaining_qty'] = 0
+                        inventory[symbol].pop(0)
+                        
+                    else:
+                        # Partially consume open lot
+                        # qty_to_process is smaller magnitude. e.g. Sell -10. Open is 50.
+                        # We use all of qty_to_process.
+                        
+                        term_pnl = -(price - open_price) * qty_to_process * multiplier
+                        total_pnl += term_pnl
+                        
+                        # Update Inventory item
+                        # New qty is open_qty + qty_to_process (since signs opposite, it reduces magnitude)
+                        item['qty'] += qty_to_process
+                        self.trades_df.at[open_idx, 'remaining_qty'] = item['qty']
+                        
+                        qty_to_process = 0
+                
+                self.trades_df.at[idx, 'realized_pnl'] = total_pnl
+
+                # If we still have quantity left after closing everything, it becomes new position
+                if qty_to_process != 0:
+                    self.trades_df.at[idx, 'remaining_qty'] = qty_to_process
+                    inventory[symbol].append({'idx': idx, 'qty': qty_to_process, 'price': price})
+    
     def handle_command(self, command):
         cmd = command.lower().strip()
         if cmd in ['q', 'quit']:
             self.app.switch_module(MainModule(self.app))
         elif cmd in ['h', 'help']:
-            self.output_content = "IBKR commands:\n - import (i): Import daily trades\n - import w (i w): Import weekly trades\n - p <symbol>: List positions for a symbol\n - quit (q): Return to main menu\n - help (h): Show this message"
+            self.output_content = "IBKR commands:\n - import (i): Import daily trades\n - import w (i w): Import weekly trades\n - trades (t): List all trades\n - reload (r): Reload trades from DB\n - p <symbol>: List positions for a symbol\n - quit (q): Return to main menu\n - help (h): Show this message"
+        elif cmd in ['t', 'trades']:
+            self.list_all_trades()
+        elif cmd in ['r', 'reload']:
+            self.load_trades()
+            self.output_content = f"Trades reloaded. Total: {len(self.trades_df)}"
         elif cmd.startswith('p '):
             parts = command.split()
             if len(parts) >= 2:
@@ -179,8 +294,10 @@ class IBKRModule(Module):
                 if db_handler.save_trade(row):
                     count_new += 1
             
+            
             self.output_content = f"Import complete. {count_new} new trades imported."
-
+            self.load_trades()
+            
         except Exception as e:
             self.output_content = f"[error]Error parsing XML or saving to DB: {e}[/]"
 
@@ -212,6 +329,46 @@ class IBKRModule(Module):
             self.output_content = table
         except Exception as e:
             self.output_content = f"[error]Error listing positions: {e}[/]"
+
+    def list_all_trades(self):
+        try:
+            if self.trades_df.empty:
+                self.output_content = "[info]No trades loaded.[/]"
+                return
+
+            table = Table(title="All Trades", expand=True)
+            table.add_column("Date", style="cyan")
+            table.add_column("Symbol", style="bold yellow")
+            table.add_column("Desc")
+            table.add_column("Qty", justify="right", style="magenta")
+            table.add_column("Price", justify="right", style="green")
+            table.add_column("Comm", justify="right")
+            table.add_column("O/C", justify="center")
+            table.add_column("PnL", justify="right", style="bold red")
+            table.add_column("Rem Qty", justify="right", style="blue")
+
+            for _, row in self.trades_df.iterrows():
+                pnl = row.get('realized_pnl', 0.0)
+                rem_qty = row.get('remaining_qty', 0.0)
+                
+                pnl_str = f"{pnl:.2f}" if pnl != 0 else ""
+                rem_str = f"{rem_qty:.0f}" if rem_qty != 0 else ""
+
+                table.add_row(
+                    str(row['dateTime']),
+                    str(row['symbol']),
+                    str(row['description']),
+                    f"{row['quantity']:.0f}" if pd.notnull(row['quantity']) else "",
+                    f"{row['tradePrice']:.2f}" if pd.notnull(row['tradePrice']) else "",
+                    f"{row['ibCommission']:.2f}" if pd.notnull(row['ibCommission']) else "",
+                    str(row['openCloseIndicator']),
+                    pnl_str,
+                    rem_str
+                )
+            
+            self.output_content = table
+        except Exception as e:
+            self.output_content = f"[error]Error listing trades: {e}[/]"
 
     def get_output(self):
         return self.output_content

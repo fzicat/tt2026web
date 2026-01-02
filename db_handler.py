@@ -78,3 +78,19 @@ def get_trades_by_symbol(symbol):
         return pd.DataFrame()
     finally:
         conn.close()
+
+def fetch_all_trades_as_df():
+    """
+    Retrieves all trades from the database ordered by dateTime.
+    Returns a pandas DataFrame.
+    """
+    conn = get_connection()
+    try:
+        query = "SELECT * FROM trades ORDER BY dateTime"
+        df = pd.read_sql_query(query, conn)
+        return df
+    except Exception as e:
+        print(f"Error fetching all trades: {e}")
+        return pd.DataFrame()
+    finally:
+        conn.close()
