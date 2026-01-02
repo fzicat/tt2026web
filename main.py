@@ -105,6 +105,7 @@ class IBKRModule(Module):
             # Step 2: Get Statement
             # Retry loop
             url_dl = f"{base_url}?q={ref_code}&t={token}&v=3"
+            print(url_dl)
             
             max_retries = 10
             for i in range(max_retries):
@@ -130,7 +131,8 @@ class IBKRModule(Module):
     def process_xml(self, xml_content):
         try:
             root = ET.fromstring(xml_content)
-            trades_list = root.findall('.//Trade')
+            # Use iteration to be namespace agnostic and handle both Trade and TradeConfirm
+            trades_list = [elem for elem in root.iter() if elem.tag.endswith('Trade') or elem.tag.endswith('TradeConfirm')]
             
             if not trades_list:
                 self.output_content = "[info]No trades found in the report.[/]"
@@ -143,6 +145,18 @@ class IBKRModule(Module):
                 # Sanitize numeric fields
                 safe_float = lambda k: float(data[k]) if data.get(k) and data[k].strip() else None
                 
+                # Map alternate field names if present (TradeConfirm vs Trade)
+                trade_price = safe_float('tradePrice') if 'tradePrice' in data else safe_float('price')
+                ib_commission = safe_float('ibCommission') if 'ibCommission' in data else safe_float('commission')
+                
+                open_close = data.get('openCloseIndicator')
+                if open_close is None and 'code' in data:
+                    c_val = data.get('code', '')
+                    if 'O' in c_val: 
+                        open_close = 'O'
+                    elif 'C' in c_val: 
+                        open_close = 'C'
+
                 row = {
                     'tradeID': data.get('tradeID'),
                     'accountId': data.get('accountId'),
@@ -154,12 +168,12 @@ class IBKRModule(Module):
                     'strike': safe_float('strike'),
                     'dateTime': data.get('dateTime'),
                     'quantity': safe_float('quantity'),
-                    'tradePrice': safe_float('tradePrice'),
+                    'tradePrice': trade_price,
                     'multiplier': safe_float('multiplier'),
-                    'ibCommission': safe_float('ibCommission'),
+                    'ibCommission': ib_commission,
                     'currency': data.get('currency'),
                     'notes': data.get('notes'),
-                    'openCloseIndicator': data.get('openCloseIndicator')
+                    'openCloseIndicator': open_close
                 }
                 
                 if db_handler.save_trade(row):
