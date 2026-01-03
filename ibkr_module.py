@@ -3,6 +3,8 @@ import requests
 import time
 import xml.etree.ElementTree as ET
 from rich.table import Table
+from rich.console import Group
+from rich.panel import Panel
 import config
 import db_handler
 from base_module import Module
@@ -261,6 +263,55 @@ class IBKRModule(Module):
                 self.output_content = f"[info]No trades found for {symbol}[/]"
                 return
 
+            # Partition DataFrames
+            # stock_df: putCall is not 'C' or 'P'
+            # call_df: putCall is 'C'
+            # put_df: putCall is 'P'
+            stock_df = df[~df['putCall'].isin(['C', 'P'])]
+            call_df = df[df['putCall'] == 'C']
+            put_df = df[df['putCall'] == 'P']
+
+            # Calculate Summaries
+            stock_rem_qty_sum = stock_df['remaining_qty'].sum() if not stock_df.empty else 0.0
+            call_rem_qty_sum = call_df['remaining_qty'].sum() if not call_df.empty else 0.0
+            put_rem_qty_sum = put_df['remaining_qty'].sum() if not put_df.empty else 0.0
+
+            stock_pnl_sum = stock_df['realized_pnl'].sum() if not stock_df.empty else 0.0
+            call_pnl_sum = call_df['realized_pnl'].sum() if not call_df.empty else 0.0
+            put_pnl_sum = put_df['realized_pnl'].sum() if not put_df.empty else 0.0
+
+            # Book Price Calculation
+            # sum(stock_df.credit) / sum(stock_df.remaining_qty)
+            stock_credit_sum = stock_df['credit'].sum() if not stock_df.empty else 0.0
+            
+            if stock_rem_qty_sum != 0:
+                book_price = stock_credit_sum / stock_rem_qty_sum
+            else:
+                book_price = 0.0
+
+            # Create Summary Table
+            summary_table = Table(title=f"Position Summary: {symbol}", expand=False)
+            summary_table.add_column("Symbol", style="bold yellow")
+            summary_table.add_column("Book Price", justify="right")
+            summary_table.add_column("Stk Rem Qty", justify="right", style="magenta")
+            summary_table.add_column("Call Rem Qty", justify="right", style="magenta")
+            summary_table.add_column("Put Rem Qty", justify="right", style="magenta")
+            summary_table.add_column("Stk PnL", justify="right", style="bold red")
+            summary_table.add_column("Call PnL", justify="right", style="bold red")
+            summary_table.add_column("Put PnL", justify="right", style="bold red")
+
+            summary_table.add_row(
+                symbol,
+                f"{book_price:.2f}",
+                f"{stock_rem_qty_sum:.0f}",
+                f"{call_rem_qty_sum:.0f}",
+                f"{put_rem_qty_sum:.0f}",
+                f"{stock_pnl_sum:.2f}",
+                f"{call_pnl_sum:.2f}",
+                f"{put_pnl_sum:.2f}"
+            )
+
+            # Detail Table (Existing)
             table = Table(title=f"Positions: {symbol}", expand=True)
             table.add_column("Date", style="cyan")
             table.add_column("Desc")
@@ -290,7 +341,7 @@ class IBKRModule(Module):
                     f"{row.get('credit', 0.0):.2f}" if row.get('credit', 0) != 0 else ""
                 )
             
-            self.output_content = table
+            self.output_content = Group(summary_table, table)
         except Exception as e:
             self.output_content = f"[error]Error listing positions: {e}[/]"
 
