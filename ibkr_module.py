@@ -18,6 +18,9 @@ class IBKRModule(Module):
         self.trades_df = db_handler.fetch_all_trades_as_df()
         if not self.trades_df.empty:
             self.calculate_pnl()
+            # Calculate Credit: remaining_qty * price * multiplier * -1
+            m = self.trades_df['multiplier'].fillna(1.0)
+            self.trades_df['credit'] = self.trades_df['remaining_qty'] * self.trades_df['tradePrice'] * m * -1
         count = len(self.trades_df)
         self.app.console.print(f"[info]Trades loaded: {count}[/]")
 
@@ -249,7 +252,10 @@ class IBKRModule(Module):
                 df = pd.DataFrame()
             else:
                 mask = (self.trades_df['symbol'] == symbol) | (self.trades_df['underlyingSymbol'] == symbol)
-                df = self.trades_df[mask].sort_values(by='dateTime', ascending=False)
+                # Sort by date ascending (oldest on top)
+                df = self.trades_df[mask].copy()
+                df['dateTime'] = pd.to_datetime(df['dateTime'], errors='coerce')
+                df = df.sort_values(by='dateTime', ascending=True)
 
             if df.empty:
                 self.output_content = f"[info]No trades found for {symbol}[/]"
@@ -258,19 +264,30 @@ class IBKRModule(Module):
             table = Table(title=f"Positions: {symbol}", expand=True)
             table.add_column("Date", style="cyan")
             table.add_column("Desc")
+            table.add_column("P/C", justify="center")
             table.add_column("Qty", justify="right", style="magenta")
             table.add_column("Price", justify="right", style="green")
             table.add_column("Comm", justify="right")
             table.add_column("O/C", justify="center")
+            table.add_column("Realized PnL", justify="right", style="bold red")
+            table.add_column("Remaining Qty", justify="right", style="blue")
+            table.add_column("Credit", justify="right", style="blue")
 
             for _, row in df.iterrows():
+                # Format date: 2025-12-25 14:50
+                date_str = row['dateTime'].strftime('%Y-%m-%d %H:%M') if pd.notnull(row['dateTime']) else ""
+
                 table.add_row(
-                    str(row['dateTime']),
+                    date_str,
                     str(row['description']),
+                    str(row['putCall']),
                     f"{row['quantity']:.0f}" if pd.notnull(row['quantity']) else "",
                     f"{row['tradePrice']:.2f}" if pd.notnull(row['tradePrice']) else "",
                     f"{row['ibCommission']:.2f}" if pd.notnull(row['ibCommission']) else "",
-                    str(row['openCloseIndicator'])
+                    str(row['openCloseIndicator']),
+                    f"{row.get('realized_pnl', 0.0):.2f}" if row.get('realized_pnl', 0) != 0 else "",
+                    f"{row.get('remaining_qty', 0.0):.0f}" if row.get('remaining_qty', 0) != 0 else "",
+                    f"{row.get('credit', 0.0):.2f}" if row.get('credit', 0) != 0 else ""
                 )
             
             self.output_content = table
