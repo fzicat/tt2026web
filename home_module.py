@@ -1,0 +1,27 @@
+from base_module import Module
+
+class HomeModule(Module):
+    def __init__(self, app):
+        super().__init__(app)
+        self.output_content = "Welcome to TradeTools v3\nType 'help' or 'h' for a list of commands."
+
+    def handle_command(self, command):
+        cmd = command.lower().strip()
+        if cmd in ['q', 'quit']:
+            self.app.quit()
+        elif cmd in ['h', 'help']:
+            self.output_content = "Available commands:\n - ibkr (i): Switch to IBKR module\n - quit (q): Exit the application\n - help (h): Show this message"
+        elif cmd in ['i', 'ibkr']:
+            # Local import to avoid circular dependency
+            from ibkr_module import IBKRModule
+            self.app.switch_module(IBKRModule(self.app))
+        elif cmd == "":
+            pass
+        else:
+            self.output_content = f"Unknown command: {command}\nType 'help' for valid commands."
+
+    def get_output(self):
+        return self.output_content
+
+    def get_prompt(self):
+        return "[prompt][MAIN]>> [/]"
