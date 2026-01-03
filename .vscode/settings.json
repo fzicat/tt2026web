@@ -1,0 +1,12 @@
+{
+    "sqltools.useNodeRuntime": true,
+    "sqltools.connections": [
+        {
+            "previewLimit": 50,
+            "driver": "SQLite",
+            "database": "tradetools.db",
+            "name": "tradetools",
+            "group": "tradetools"
+        }
+    ]
+}

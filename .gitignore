@@ -1,4 +1,5 @@
 config.py
 tradetools.db
+bak/
 __pycache__/
 *.pyc

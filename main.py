@@ -180,7 +180,7 @@ class IBKRModule(Module):
             parts = command.split()
             if len(parts) >= 2:
                 symbol = parts[1].upper()
-                self.list_positions(symbol)
+                self.list_position(symbol)
             else:
                 self.output_content = "[error]Usage: p <symbol>[/]"
         elif cmd in ['i', 'import']:
@@ -301,9 +301,14 @@ class IBKRModule(Module):
         except Exception as e:
             self.output_content = f"[error]Error parsing XML or saving to DB: {e}[/]"
 
-    def list_positions(self, symbol):
+    def list_position(self, symbol):
         try:
-            df = db_handler.get_trades_by_symbol(symbol)
+            if self.trades_df.empty:
+                df = pd.DataFrame()
+            else:
+                mask = (self.trades_df['symbol'] == symbol) | (self.trades_df['underlyingSymbol'] == symbol)
+                df = self.trades_df[mask].sort_values(by='dateTime', ascending=False)
+
             if df.empty:
                 self.output_content = f"[info]No trades found for {symbol}[/]"
                 return
