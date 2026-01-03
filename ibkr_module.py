@@ -119,7 +119,7 @@ class IBKRModule(Module):
             from home_module import HomeModule
             self.app.switch_module(HomeModule(self.app))
         elif cmd in ['h', 'help']:
-            self.output_content = "IBKR commands:\n - import (i): Import daily trades\n - import w (i w): Import weekly trades\n - trades (t): List all trades\n - reload (r): Reload trades from DB\n - p <symbol>: List positions for a symbol\n - quit (q): Return to main menu\n - help (h): Show this message"
+            self.output_content = "IBKR commands:\n - import (i): Import daily trades\n - import w (i w): Import weekly trades\n - list (l): List all positions\n - trades (t): List all trades\n - reload (r): Reload trades from DB\n - p <symbol>: List positions for a symbol\n - quit (q): Return to main menu\n - help (h): Show this message"
         elif cmd in ['t', 'trades']:
             self.list_all_trades()
         elif cmd in ['r', 'reload']:
@@ -136,6 +136,8 @@ class IBKRModule(Module):
             self.import_trades(config.QUERY_ID_DAILY, "Daily")
         elif cmd in ['i w', 'import w', 'import weekly']:
             self.import_trades(config.QUERY_ID_WEEKLY, "Weekly")
+        elif cmd in ['l', 'list']:
+            self.list_all_positions()
         elif cmd == "":
             pass
         else:
@@ -290,7 +292,7 @@ class IBKRModule(Module):
                 book_price = 0.0
 
             # Create Summary Table
-            summary_table = Table(title=f"Position Summary: {symbol}", expand=False)
+            summary_table = Table(title=f"Position Summary: {symbol}", expand=False, row_styles=["", "on #1d2021"])
             summary_table.add_column("Symbol", style="bold yellow")
             summary_table.add_column("Book Price", justify="right")
             summary_table.add_column("Stk Rem Qty", justify="right", style="magenta")
@@ -312,7 +314,7 @@ class IBKRModule(Module):
             )
 
             # Detail Table (Existing)
-            table = Table(title=f"Positions: {symbol}", expand=True)
+            table = Table(title=f"Positions: {symbol}", expand=True, row_styles=["", "on #1d2021"])
             table.add_column("Date", style="cyan")
             table.add_column("Desc")
             table.add_column("P/C", justify="center")
@@ -366,9 +368,6 @@ class IBKRModule(Module):
                 pnl = row.get('realized_pnl', 0.0)
                 rem_qty = row.get('remaining_qty', 0.0)
                 
-                pnl_str = f"{pnl:.2f}" if pnl != 0 else ""
-                rem_str = f"{rem_qty:.0f}" if rem_qty != 0 else ""
-
                 table.add_row(
                     str(row['dateTime']),
                     str(row['symbol']),
@@ -377,13 +376,71 @@ class IBKRModule(Module):
                     f"{row['tradePrice']:.2f}" if pd.notnull(row['tradePrice']) else "",
                     f"{row['ibCommission']:.2f}" if pd.notnull(row['ibCommission']) else "",
                     str(row['openCloseIndicator']),
-                    pnl_str,
-                    rem_str
+                    f"{pnl:.2f}" if pnl != 0 else "",
+                    f"{rem_qty:.0f}" if rem_qty != 0 else ""
                 )
+
+            # Direct print to allow terminal scrolling
+            self.app.console.clear()
+            self.app.console.print(table)
+            
+            # Skip the next render cycle in main loop to prevent clearing the screen
+            self.app.skip_render = True
+
+            # We do NOT set output_content here because it won't be displayed
+            # (since render is skipped and the loop goes straight to input)
+        except Exception as e:
+            self.output_content = f"[error]Error listing trades: {e}[/]"
+
+    def list_all_positions(self):
+        try:
+            if self.trades_df.empty:
+                self.output_content = "[info]No trades loaded.[/]"
+                return
+
+            # Group by underlyingSymbol
+            # We assume underlyingSymbol is present. If NaN, it might be skipped.
+            # Usually IBKR report provides it.
+            groups = self.trades_df.groupby('underlyingSymbol')
+            
+            table = Table(title="All Positions", expand=False, row_styles=["", "on #1d2021"])
+            table.add_column("Symbol", style="bold yellow")
+            table.add_column("Call (Qty)", justify="right", style="magenta")
+            table.add_column("Stock (Qty)", justify="right", style="magenta")
+            table.add_column("Put (Qty)", justify="right", style="magenta")
+            table.add_column("Call Realized PnL", justify="right", style="bold red")
+            table.add_column("Stock Realized PnL", justify="right", style="bold red")
+            table.add_column("Put Realized PnL", justify="right", style="bold red")
+
+            for symbol, group in groups:
+                 # Partition DataFrames
+                 stock_df = group[~group['putCall'].isin(['C', 'P'])]
+                 call_df = group[group['putCall'] == 'C']
+                 put_df = group[group['putCall'] == 'P']
+                 
+                 s_qty = stock_df['remaining_qty'].sum()
+                 c_qty = call_df['remaining_qty'].sum()
+                 p_qty = put_df['remaining_qty'].sum()
+                 
+                 s_pnl = stock_df['realized_pnl'].sum()
+                 c_pnl = call_df['realized_pnl'].sum()
+                 p_pnl = put_df['realized_pnl'].sum()
+                 
+                 # Only add row if there is something interesting
+                 if any(x != 0 for x in [s_qty, c_qty, p_qty, s_pnl, c_pnl, p_pnl]):
+                     table.add_row(
+                        str(symbol),
+                        f"{c_qty:.0f}" if c_qty != 0 else "",
+                        f"{s_qty:.0f}" if s_qty != 0 else "",
+                        f"{p_qty:.0f}" if p_qty != 0 else "",
+                        f"{c_pnl:.2f}" if c_pnl != 0 else "",
+                        f"{s_pnl:.2f}" if s_pnl != 0 else "",
+                        f"{p_pnl:.2f}" if p_pnl != 0 else ""
+                     )
             
             self.output_content = table
         except Exception as e:
-            self.output_content = f"[error]Error listing trades: {e}[/]"
+            self.output_content = f"[error]Error listing all positions: {e}[/]"
 
     def get_output(self):
         return self.output_content

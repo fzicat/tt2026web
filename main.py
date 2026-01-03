@@ -20,7 +20,10 @@ class TradeToolsApp:
         })
         self.console = Console(theme=gruvbox_theme, style="base")
         self.running = True
+        self.console = Console(theme=gruvbox_theme, style="base")
+        self.running = True
         self.active_module = HomeModule(self)
+        self.skip_render = False
 
     def switch_module(self, module):
         self.active_module = module
@@ -58,12 +61,16 @@ class TradeToolsApp:
         db_handler.init_db()
         
         while self.running:
-            self.console.clear()
-            layout = self.get_layout()
+            if not self.skip_render:
+                self.console.clear()
+                layout = self.get_layout()
+                
+                # Print the layout taking up most of the screen
+                # Leave 1 line for the prompt
+                self.console.print(layout, height=self.console.height - 2)
             
-            # Print the layout taking up most of the screen
-            # Leave 1 line for the prompt
-            self.console.print(layout, height=self.console.height - 2)
+            self.skip_render = False
+
             
             try:
                 # Prompt loop
