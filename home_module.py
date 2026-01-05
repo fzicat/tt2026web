@@ -7,7 +7,7 @@ class HomeModule(Module):
 
     def handle_command(self, command):
         cmd = command.lower().strip()
-        if cmd in ['q', 'quit']:
+        if cmd in ['q', 'qq','quit']:
             self.app.quit()
         elif cmd in ['h', 'help']:
             self.output_content = "Available commands:\n - ibkr (i): Switch to IBKR module\n - quit (q): Exit the application\n - help (h): Show this message"
@@ -24,4 +24,4 @@ class HomeModule(Module):
         return self.output_content
 
     def get_prompt(self):
-        return "[prompt][MAIN]>> [/]"
+        return "[prompt][MAIN] >> [/]"

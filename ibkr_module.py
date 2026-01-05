@@ -13,12 +13,16 @@ class IBKRModule(Module):
     def __init__(self, app):
         super().__init__(app)
         self.trades_df = pd.DataFrame()
+        self.position_map = {}
+        self.current_symbol = None
         self.output_content = "IBKR Module Active\nType 'help' or 'h' for a list of commands."
         self.load_trades()
 
     def load_trades(self):
         self.trades_df = db_handler.fetch_all_trades_as_df()
         if not self.trades_df.empty:
+            # Filter out USD.CAD
+            self.trades_df = self.trades_df[self.trades_df['symbol'] != 'USD.CAD']
             self.calculate_pnl()
             # Calculate Credit: remaining_qty * price * multiplier * -1
             m = self.trades_df['multiplier'].fillna(1.0)
@@ -118,8 +122,22 @@ class IBKRModule(Module):
             # Local import to avoid circular dependency
             from home_module import HomeModule
             self.app.switch_module(HomeModule(self.app))
+        elif cmd in ['qq', 'quit quit']:
+            self.app.quit()
         elif cmd in ['h', 'help']:
-            self.output_content = "IBKR commands:\n - import (i): Import daily trades\n - import w (i w): Import weekly trades\n - list (l): List all positions\n - trades (t): List all trades\n - reload (r): Reload trades from DB\n - p <symbol>: List positions for a symbol\n - quit (q): Return to main menu\n - help (h): Show this message"
+            self.output_content = '''IBKR commands:\n
+        - I   | import     > Import daily trades
+        - I W | import w   > Import weekly trades
+        - L   | list       > List all positions
+        - T   | trades     > List all trades
+        - R   | reload     > Reload trades from DB
+        - P x | p <sym>    > List positions for a symbol
+        - D   | debug      > Debug (print trades_df)
+        - H   | help       > Show this message
+        - Q   | quit       > Return to main menu
+        - QQ  | quit quit  > Exit the application'''
+        elif cmd in ['d', 'debug']:
+            self.debug()
         elif cmd in ['t', 'trades']:
             self.list_all_trades()
         elif cmd in ['r', 'reload']:
@@ -136,8 +154,20 @@ class IBKRModule(Module):
             self.import_trades(config.QUERY_ID_DAILY, "Daily")
         elif cmd in ['i w', 'import w', 'import weekly']:
             self.import_trades(config.QUERY_ID_WEEKLY, "Weekly")
-        elif cmd in ['l', 'list']:
-            self.list_all_positions()
+        elif cmd in ['l', 'lv', 'list', 'list value']:
+            self.list_all_positions(order_by='value', ascending=False)
+        elif cmd in ['ls', 'list symbol']:
+            self.list_all_positions(order_by='symbol', ascending=True)
+        elif cmd.startswith('e ') or cmd.startswith('edit '):
+            parts = command.split()
+            if len(parts) >= 2:
+                try:
+                    idx = int(parts[1])
+                    self.edit_trade(idx)
+                except ValueError:
+                    self.output_content = "[error]Usage: edit <index>[/]"
+            else:
+                self.output_content = "[error]Usage: edit <index>[/]"
         elif cmd == "":
             pass
         else:
@@ -259,7 +289,7 @@ class IBKRModule(Module):
                 # Sort by date ascending (oldest on top)
                 df = self.trades_df[mask].copy()
                 df['dateTime'] = pd.to_datetime(df['dateTime'], errors='coerce')
-                df = df.sort_values(by='dateTime', ascending=True)
+                df = df.sort_values(by='dateTime', ascending=False)
 
             if df.empty:
                 self.output_content = f"[info]No trades found for {symbol}[/]"
@@ -313,8 +343,12 @@ class IBKRModule(Module):
                 f"{put_pnl_sum:.2f}"
             )
 
+            self.current_symbol = symbol
+            self.position_map = {}
+
             # Detail Table (Existing)
             table = Table(title=f"Positions: {symbol}", expand=True, row_styles=["", "on #1d2021"])
+            table.add_column("#", justify="right", style="cyan")
             table.add_column("Date", style="cyan")
             table.add_column("Desc")
             table.add_column("P/C", justify="center")
@@ -325,12 +359,19 @@ class IBKRModule(Module):
             table.add_column("Realized PnL", justify="right", style="bold red")
             table.add_column("Remaining Qty", justify="right", style="blue")
             table.add_column("Credit", justify="right", style="blue")
+            table.add_column("Delta", justify="right", style="yellow")
+            table.add_column("Und Price", justify="right", style="yellow")
 
+            row_idx = 1
             for _, row in df.iterrows():
                 # Format date: 2025-12-25 14:50
                 date_str = row['dateTime'].strftime('%Y-%m-%d %H:%M') if pd.notnull(row['dateTime']) else ""
 
+                # Store mapping
+                self.position_map[row_idx] = row['tradeID']
+
                 table.add_row(
+                    str(row_idx),
                     date_str,
                     str(row['description']),
                     str(row['putCall']),
@@ -340,12 +381,63 @@ class IBKRModule(Module):
                     str(row['openCloseIndicator']),
                     f"{row.get('realized_pnl', 0.0):.2f}" if row.get('realized_pnl', 0) != 0 else "",
                     f"{row.get('remaining_qty', 0.0):.0f}" if row.get('remaining_qty', 0) != 0 else "",
-                    f"{row.get('credit', 0.0):.2f}" if row.get('credit', 0) != 0 else ""
+                    f"{row.get('credit', 0.0):.2f}" if row.get('credit', 0) != 0 else "",
+                    f"{row.get('delta', 0.0):.4f}" if pd.notnull(row.get('delta')) else "",
+                    f"{row.get('und_price', 0.0):.2f}" if pd.notnull(row.get('und_price')) else ""
                 )
+                row_idx += 1
             
             self.output_content = Group(summary_table, table)
         except Exception as e:
             self.output_content = f"[error]Error listing positions: {e}[/]"
+
+    def edit_trade(self, idx):
+        if idx not in self.position_map:
+            self.output_content = f"[error]Invalid trade index: {idx}[/]"
+            return
+
+        trade_id = self.position_map[idx]
+        
+        # We need to find the current values to show (optional, but good UX)
+        # But we can just ask for new values.
+        
+        self.app.console.print(f"[info]Editing trade #{idx} (ID: {trade_id})[/]")
+        
+        try:
+            delta_str = self.app.console.input("[prompt]Enter Delta (float): [/]")
+            und_price_str = self.app.console.input("[prompt]Enter Und Price (float): [/]")
+            
+            updates = {}
+            if delta_str.strip():
+                updates['delta'] = float(delta_str)
+            if und_price_str.strip():
+                updates['und_price'] = float(und_price_str)
+                
+            if updates:
+                if db_handler.update_trade_fields(trade_id, updates):
+                    self.app.console.print("[info]Trade updated successfully.[/]")
+                    self.load_trades() # Reload DF
+                    if self.current_symbol:
+                        self.list_position(self.current_symbol) # Refresh view
+                    else:
+                        self.output_content = "Trade updated."
+                else:
+                    self.output_content = "[error]Failed to update trade.[/]"
+            else:
+                 self.output_content = "[info]No changes made.[/]"
+
+        except ValueError:
+            self.output_content = "[error]Invalid input (expected float).[/]"
+        except Exception as e:
+            self.output_content = f"[error]Error updating trade: {e}[/]"
+
+    def debug(self):
+        # Direct print to allow terminal scrolling
+        self.app.console.clear()
+        self.app.console.print(self.trades_df.to_string())
+        
+        # Skip the next render cycle in main loop to prevent clearing the screen
+        self.app.skip_render = True
 
     def list_all_trades(self):
         try:
@@ -392,7 +484,7 @@ class IBKRModule(Module):
         except Exception as e:
             self.output_content = f"[error]Error listing trades: {e}[/]"
 
-    def list_all_positions(self):
+    def list_all_positions(self, order_by='value', ascending=False):
         try:
             if self.trades_df.empty:
                 self.output_content = "[info]No trades loaded.[/]"
@@ -405,18 +497,23 @@ class IBKRModule(Module):
             
             table = Table(title="All Positions", expand=False, row_styles=["", "on #1d2021"])
             table.add_column("Symbol", style="bold yellow")
-            table.add_column("Call (Qty)", justify="right", style="magenta")
-            table.add_column("Stock (Qty)", justify="right", style="magenta")
-            table.add_column("Put (Qty)", justify="right", style="magenta")
-            table.add_column("Call Realized PnL", justify="right", style="bold red")
-            table.add_column("Stock Realized PnL", justify="right", style="bold red")
-            table.add_column("Put Realized PnL", justify="right", style="bold red")
+            table.add_column("Value", justify="right", style="magenta")
+            table.add_column("Stock", justify="right", style="magenta")
+            table.add_column("Call", justify="right", style="magenta")
+            table.add_column("Put", justify="right", style="magenta")
+            table.add_column("Stock Rlzd PnL", justify="right", style="bold red")
+            table.add_column("Call Rlzd PnL", justify="right", style="bold red")
+            table.add_column("Put Rlzd PnL", justify="right", style="bold red")
+
+            data_rows = []
 
             for symbol, group in groups:
                  # Partition DataFrames
                  stock_df = group[~group['putCall'].isin(['C', 'P'])]
                  call_df = group[group['putCall'] == 'C']
                  put_df = group[group['putCall'] == 'P']
+
+                 value = stock_df['credit'].sum() * -1
                  
                  s_qty = stock_df['remaining_qty'].sum()
                  c_qty = call_df['remaining_qty'].sum()
@@ -427,16 +524,58 @@ class IBKRModule(Module):
                  p_pnl = put_df['realized_pnl'].sum()
                  
                  # Only add row if there is something interesting
-                 if any(x != 0 for x in [s_qty, c_qty, p_qty, s_pnl, c_pnl, p_pnl]):
-                     table.add_row(
-                        str(symbol),
-                        f"{c_qty:.0f}" if c_qty != 0 else "",
-                        f"{s_qty:.0f}" if s_qty != 0 else "",
-                        f"{p_qty:.0f}" if p_qty != 0 else "",
-                        f"{c_pnl:.2f}" if c_pnl != 0 else "",
-                        f"{s_pnl:.2f}" if s_pnl != 0 else "",
-                        f"{p_pnl:.2f}" if p_pnl != 0 else ""
-                     )
+                 if any(x != 0 for x in [value, s_qty, c_qty, p_qty, s_pnl, c_pnl, p_pnl]):
+                     data_rows.append({
+                        'symbol': symbol,
+                        'value': value,
+                        's_qty': s_qty,
+                        'c_qty': c_qty,
+                        'p_qty': p_qty,
+                        's_pnl': s_pnl,
+                        'c_pnl': c_pnl,
+                        'p_pnl': p_pnl
+                     })
+
+            # Sort
+            if order_by == 'value':
+                data_rows.sort(key=lambda x: x['value'], reverse=not ascending)
+            elif order_by == 'symbol':
+                data_rows.sort(key=lambda x: x['symbol'], reverse=not ascending)
+
+            # Calculate totals
+            total_value = sum(row['value'] for row in data_rows)
+            total_s_qty = sum(row['s_qty'] for row in data_rows)
+            total_c_qty = sum(row['c_qty'] for row in data_rows)
+            total_p_qty = sum(row['p_qty'] for row in data_rows)
+            total_s_pnl = sum(row['s_pnl'] for row in data_rows)
+            total_c_pnl = sum(row['c_pnl'] for row in data_rows)
+            total_p_pnl = sum(row['p_pnl'] for row in data_rows)
+
+            for row in data_rows:
+                table.add_row(
+                    str(row['symbol']),
+                    f"{row['value']:,.2f}" if row['value'] != 0 else "",
+                    f"{row['s_qty']:.0f}" if row['s_qty'] != 0 else "",
+                    f"{row['c_qty']:.0f}" if row['c_qty'] != 0 else "",
+                    f"{row['p_qty']:.0f}" if row['p_qty'] != 0 else "",
+                    f"{row['s_pnl']:.2f}" if row['s_pnl'] != 0 else "",
+                    f"{row['c_pnl']:.2f}" if row['c_pnl'] != 0 else "",
+                    f"{row['p_pnl']:.2f}" if row['p_pnl'] != 0 else ""
+                )
+            
+            # Add totals row
+            table.add_section()
+            table.add_row(
+                "TOTAL",
+                f"{total_value:,.2f}",
+                f"{total_s_qty:.0f}",
+                f"{total_c_qty:.0f}",
+                f"{total_p_qty:.0f}",
+                f"{total_s_pnl:.2f}",
+                f"{total_c_pnl:.2f}",
+                f"{total_p_pnl:.2f}",
+                style="bold"
+            )
             
             self.output_content = table
         except Exception as e:
@@ -446,4 +585,4 @@ class IBKRModule(Module):
         return self.output_content
 
     def get_prompt(self):
-        return "[prompt][IBKR]>> [/]"
+        return "[prompt][IBKR] >> [/]"

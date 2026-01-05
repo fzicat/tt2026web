@@ -35,6 +35,8 @@ def init_db():
     
     conn.commit()
     conn.close()
+    
+    ensure_schema()
 
 def save_trade(trade_data):
     """
@@ -55,6 +57,57 @@ def save_trade(trade_data):
     except Exception as e:
         print(f"Error saving trade {trade_data.get('tradeID')}: {e}")
         return False
+    finally:
+        conn.close()
+
+def update_trade_fields(trade_id, updates):
+    """
+    Updates specific fields for a trade.
+    updates: dict of column_name -> value
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    set_clause = ', '.join([f"{k} = ?" for k in updates.keys()])
+    values = list(updates.values())
+    values.append(trade_id)
+    
+    query = f"UPDATE trades SET {set_clause} WHERE tradeID = ?"
+    
+    try:
+        cursor.execute(query, values)
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        print(f"Error updating trade {trade_id}: {e}")
+        return False
+    finally:
+        conn.close()
+
+def ensure_schema():
+    """
+    Ensures that the database schema is up to date.
+    Adds new columns if they are missing.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if delta column exists
+        cursor.execute("PRAGMA table_info(trades)")
+        columns = [info[1] for info in cursor.fetchall()]
+        
+        if 'delta' not in columns:
+            cursor.execute("ALTER TABLE trades ADD COLUMN delta REAL")
+            print("Added delta column to trades table.")
+            
+        if 'und_price' not in columns:
+            cursor.execute("ALTER TABLE trades ADD COLUMN und_price REAL")
+            print("Added und_price column to trades table.")
+            
+        conn.commit()
+    except Exception as e:
+        print(f"Error ensuring schema: {e}")
     finally:
         conn.close()
 
