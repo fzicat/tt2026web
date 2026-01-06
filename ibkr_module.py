@@ -594,13 +594,13 @@ class IBKRModule(Module):
             table.add_column("Value", justify="right", style="magenta")
             table.add_column("MTM", justify="right", style="blue")
             table.add_column("MTM %", justify="right", style="blue")
-            table.add_column("Unrlzd PnL", justify="right", style="blue")
+            table.add_column("Unrlzd PnL", justify="right")
             table.add_column("Stock", justify="right", style="magenta")
             table.add_column("Call", justify="right", style="magenta")
             table.add_column("Put", justify="right", style="magenta")
-            table.add_column("Stock Rlzd PnL", justify="right", style="bold red")
-            table.add_column("Call Rlzd PnL", justify="right", style="bold red")
-            table.add_column("Put Rlzd PnL", justify="right", style="bold red")
+            table.add_column("Stock Rlzd PnL", justify="right")
+            table.add_column("Call Rlzd PnL", justify="right")
+            table.add_column("Put Rlzd PnL", justify="right")
 
             data_rows = []
 
@@ -656,19 +656,24 @@ class IBKRModule(Module):
             total_c_pnl = sum(row['c_pnl'] for row in data_rows)
             total_p_pnl = sum(row['p_pnl'] for row in data_rows)
 
+            def fmt_pnl(val):
+                if val == 0: return ""
+                if val > 0: return f"[blue]{val:,.2f}[/blue]"
+                return f"[orange1]{val:,.2f}[/orange1]"
+
             for row in data_rows:
                 table.add_row(
                     str(row['symbol']),
                     f"{row['value']:,.2f}" if row['value'] != 0 else "",
                     f"{row['mtm']:,.2f}" if row['mtm'] != 0 else "",
-                    f"{row['mtm'] / total_mtm * 100:.2f}%" if row['mtm'] != 0 else "",  # new col, not in data_rows
-                    f"{row['unrlzd_pnl']:,.2f}" if row['unrlzd_pnl'] != 0 else "",
+                    f"{row['mtm'] / total_mtm * 100:.2f}%" if total_mtm != 0 and row['mtm'] != 0 else "",
+                    fmt_pnl(row['unrlzd_pnl']),
                     f"{row['s_qty']:.0f}" if row['s_qty'] != 0 else "",
                     f"{row['c_qty']:.0f}" if row['c_qty'] != 0 else "",
                     f"{row['p_qty']:.0f}" if row['p_qty'] != 0 else "",
-                    f"{row['s_pnl']:.2f}" if row['s_pnl'] != 0 else "",
-                    f"{row['c_pnl']:.2f}" if row['c_pnl'] != 0 else "",
-                    f"{row['p_pnl']:.2f}" if row['p_pnl'] != 0 else ""
+                    fmt_pnl(row['s_pnl']),
+                    fmt_pnl(row['c_pnl']),
+                    fmt_pnl(row['p_pnl'])
                 )
             
             # Add totals row
@@ -677,14 +682,14 @@ class IBKRModule(Module):
                 "TOTAL",
                 f"{total_value:,.2f}",
                 f"{total_mtm:,.2f}",
-                f"{total_mtm / total_mtm * 100:.2f}%", # new col, not in data_rows
-                f"{total_unrlzd_pnl:,.2f}",
+                f"{total_mtm / total_mtm * 100:.2f}%" if total_mtm != 0 else "",
+                fmt_pnl(total_unrlzd_pnl),
                 f"{total_s_qty:.0f}",
                 f"{total_c_qty:.0f}",
                 f"{total_p_qty:.0f}",
-                f"{total_s_pnl:.2f}",
-                f"{total_c_pnl:.2f}",
-                f"{total_p_pnl:.2f}",
+                fmt_pnl(total_s_pnl),
+                fmt_pnl(total_c_pnl),
+                fmt_pnl(total_p_pnl),
                 style="bold"
             )
             
