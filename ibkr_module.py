@@ -239,7 +239,9 @@ class IBKRModule(Module):
             self.import_trades(config.QUERY_ID_DAILY, "Daily")
         elif cmd in ['i w', 'import w', 'import weekly']:
             self.import_trades(config.QUERY_ID_WEEKLY, "Weekly")
-        elif cmd in ['l', 'lv', 'list', 'list value']:
+        elif cmd in ['l', 'lm', 'list', 'list mtm']:
+            self.list_all_positions(order_by='mtm', ascending=False)
+        elif cmd in ['lv', 'list value']:
             self.list_all_positions(order_by='value', ascending=False)
         elif cmd in ['ls', 'list symbol']:
             self.list_all_positions(order_by='symbol', ascending=True)
@@ -519,7 +521,14 @@ class IBKRModule(Module):
     def debug(self):
         # Direct print to allow terminal scrolling
         self.app.console.clear()
-        self.app.console.print(self.trades_df.to_string())
+        groups = self.trades_df.groupby('underlyingSymbol')
+        for name, group in groups:
+            print(name)
+            print(group)
+            print("\n")
+        print("-----------\n")
+        print(self.trades_df.to_string())
+        # self.app.console.print(self.trades_df.to_string())
         
         # Skip the next render cycle in main loop to prevent clearing the screen
         self.app.skip_render = True
@@ -569,7 +578,7 @@ class IBKRModule(Module):
         except Exception as e:
             self.output_content = f"[error]Error listing trades: {e}[/]"
 
-    def list_all_positions(self, order_by='value', ascending=False):
+    def list_all_positions(self, order_by='mtm', ascending=False):
         try:
             if self.trades_df.empty:
                 self.output_content = "[info]No trades loaded.[/]"
@@ -584,6 +593,7 @@ class IBKRModule(Module):
             table.add_column("Symbol", style="bold yellow")
             table.add_column("Value", justify="right", style="magenta")
             table.add_column("MTM", justify="right", style="blue")
+            table.add_column("MTM %", justify="right", style="blue")
             table.add_column("Unrlzd PnL", justify="right", style="blue")
             table.add_column("Stock", justify="right", style="magenta")
             table.add_column("Call", justify="right", style="magenta")
@@ -613,7 +623,7 @@ class IBKRModule(Module):
                  p_pnl = put_df['realized_pnl'].sum()
                  
                  # Only add row if there is something interesting
-                 if any(x != 0 for x in [value, mtm, unrlzd_pnl, s_qty, c_qty, p_qty, s_pnl, c_pnl, p_pnl]):
+                 if any(x != 0 for x in [value, mtm, s_qty, c_qty, p_qty, s_pnl, c_pnl, p_pnl]):
                      data_rows.append({
                         'symbol': symbol,
                         'value': value,
@@ -630,6 +640,8 @@ class IBKRModule(Module):
             # Sort
             if order_by == 'value':
                 data_rows.sort(key=lambda x: x['value'], reverse=not ascending)
+            elif order_by == 'mtm':
+                data_rows.sort(key=lambda x: x['mtm'], reverse=not ascending)
             elif order_by == 'symbol':
                 data_rows.sort(key=lambda x: x['symbol'], reverse=not ascending)
 
@@ -649,6 +661,7 @@ class IBKRModule(Module):
                     str(row['symbol']),
                     f"{row['value']:,.2f}" if row['value'] != 0 else "",
                     f"{row['mtm']:,.2f}" if row['mtm'] != 0 else "",
+                    f"{row['mtm'] / total_mtm * 100:.2f}%" if row['mtm'] != 0 else "",  # new col, not in data_rows
                     f"{row['unrlzd_pnl']:,.2f}" if row['unrlzd_pnl'] != 0 else "",
                     f"{row['s_qty']:.0f}" if row['s_qty'] != 0 else "",
                     f"{row['c_qty']:.0f}" if row['c_qty'] != 0 else "",
@@ -664,6 +677,7 @@ class IBKRModule(Module):
                 "TOTAL",
                 f"{total_value:,.2f}",
                 f"{total_mtm:,.2f}",
+                f"{total_mtm / total_mtm * 100:.2f}%", # new col, not in data_rows
                 f"{total_unrlzd_pnl:,.2f}",
                 f"{total_s_qty:.0f}",
                 f"{total_c_qty:.0f}",
