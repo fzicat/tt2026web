@@ -1,4 +1,5 @@
 import pandas as pd
+
 import requests
 import time
 import xml.etree.ElementTree as ET
@@ -23,10 +24,25 @@ class IBKRModule(Module):
         if not self.trades_df.empty:
             # Filter out USD.CAD
             self.trades_df = self.trades_df[self.trades_df['symbol'] != 'USD.CAD']
+            
             self.calculate_pnl()
+            
             # Calculate Credit: remaining_qty * price * multiplier * -1
             m = self.trades_df['multiplier'].fillna(1.0)
             self.trades_df['credit'] = self.trades_df['remaining_qty'] * self.trades_df['tradePrice'] * m * -1
+
+            # MTM Logic
+            self.trades_df['mtm_price'] = 0.0
+            
+            market_prices = db_handler.fetch_latest_market_prices()
+            
+            # Map prices for non-option trades
+            mask = ~self.trades_df['putCall'].isin(['C', 'P'])
+            self.trades_df.loc[mask, 'mtm_price'] = self.trades_df.loc[mask, 'symbol'].map(market_prices).fillna(0.0)
+            
+            # Calculate MTM Value
+            self.trades_df['mtm_value'] = self.trades_df['mtm_price'] * self.trades_df['remaining_qty']
+
         count = len(self.trades_df)
         self.app.console.print(f"[info]Trades loaded: {count}[/]")
 
@@ -115,6 +131,72 @@ class IBKRModule(Module):
                 if qty_to_process != 0:
                     self.trades_df.at[idx, 'remaining_qty'] = qty_to_process
                     inventory[symbol].append({'idx': idx, 'qty': qty_to_process, 'price': price})
+
+    def process_mtm_update(self):
+        if self.trades_df.empty:
+            self.output_content = "[info]No trades to update.[/]"
+            return
+
+        self.app.console.print("[info]Fetching market prices...[/]")
+        
+        # Filter for non-option trades (Stocks)
+        mask = ~self.trades_df['putCall'].isin(['C', 'P'])
+        symbols_to_update = self.trades_df.loc[mask, 'symbol'].unique()
+        
+        if len(symbols_to_update) == 0:
+            self.output_content = "[info]No non-option positions found.[/]"
+            return
+
+        try:
+            tickers_str = " ".join(symbols_to_update)
+            # Use yahooquery instead of yfinance
+            try:
+                from yahooquery import Ticker
+            except ImportError:
+                self.output_content = "[error]yahooquery not installed. Please install it with: pip install yahooquery[/]"
+                return
+
+            self.app.console.print(f"[info]Fetching data for {len(symbols_to_update)} symbols using yahooquery...[/]")
+            
+            t = Ticker(symbols_to_update, asynchronous=True)
+            data = t.price
+            
+            # data is a dict: {symbol: {key: value, ...}}
+            # We want 'regularMarketPrice'
+            
+            if not isinstance(data, dict):
+                 self.output_content = f"[error]Unexpected response from yahooquery: {type(data)}[/]"
+                 return
+
+            current_time = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+            count = 0
+            
+            for sym, info in data.items():
+                # info might be a string if error, or dict if success
+                if isinstance(info, dict):
+                    price = info.get('regularMarketPrice')
+                    if price is None:
+                        # Fallback to previousClose or other fields
+                        price = info.get('regularMarketPreviousClose')
+                        
+                    if price is not None:
+                        self.app.console.print(f"[debug]Price for {sym}: {price}[/]")
+                        db_handler.save_market_price(sym, float(price), current_time)
+                        count += 1
+                    else:
+                        self.app.console.print(f"[warn]No price found for {sym}[/]")
+                else:
+                    self.app.console.print(f"[warn]Could not fetch data for {sym}: {info}[/]")
+
+            self.output_content = f"Updated prices for {count} symbols."
+            self.load_trades()
+            
+        except Exception as e:
+            self.output_content = f"[error]Error fetching prices: {e}[/]"
+            
+        except Exception as e:
+            self.output_content = f"[error]Error fetching prices: {e}[/]"
+
     
     def handle_command(self, command):
         cmd = command.lower().strip()
@@ -128,6 +210,7 @@ class IBKRModule(Module):
             self.output_content = '''IBKR commands:\n
         - I   | import     > Import daily trades
         - I W | import w   > Import weekly trades
+        - M   | mtm        > Get Mark-to-Market Values
         - L   | list       > List all positions
         - T   | trades     > List all trades
         - R   | reload     > Reload trades from DB
@@ -136,6 +219,8 @@ class IBKRModule(Module):
         - H   | help       > Show this message
         - Q   | quit       > Return to main menu
         - QQ  | quit quit  > Exit the application'''
+        elif cmd in ['m', 'mtm']:
+            self.process_mtm_update()
         elif cmd in ['d', 'debug']:
             self.debug()
         elif cmd in ['t', 'trades']:
@@ -498,6 +583,8 @@ class IBKRModule(Module):
             table = Table(title="All Positions", expand=False, row_styles=["", "on #1d2021"])
             table.add_column("Symbol", style="bold yellow")
             table.add_column("Value", justify="right", style="magenta")
+            table.add_column("MTM", justify="right", style="blue")
+            table.add_column("Unrlzd PnL", justify="right", style="blue")
             table.add_column("Stock", justify="right", style="magenta")
             table.add_column("Call", justify="right", style="magenta")
             table.add_column("Put", justify="right", style="magenta")
@@ -514,6 +601,8 @@ class IBKRModule(Module):
                  put_df = group[group['putCall'] == 'P']
 
                  value = stock_df['credit'].sum() * -1
+                 mtm = stock_df['mtm_value'].sum()
+                 unrlzd_pnl = mtm - value
                  
                  s_qty = stock_df['remaining_qty'].sum()
                  c_qty = call_df['remaining_qty'].sum()
@@ -524,10 +613,12 @@ class IBKRModule(Module):
                  p_pnl = put_df['realized_pnl'].sum()
                  
                  # Only add row if there is something interesting
-                 if any(x != 0 for x in [value, s_qty, c_qty, p_qty, s_pnl, c_pnl, p_pnl]):
+                 if any(x != 0 for x in [value, mtm, unrlzd_pnl, s_qty, c_qty, p_qty, s_pnl, c_pnl, p_pnl]):
                      data_rows.append({
                         'symbol': symbol,
                         'value': value,
+                        'mtm': mtm,
+                        'unrlzd_pnl': unrlzd_pnl,
                         's_qty': s_qty,
                         'c_qty': c_qty,
                         'p_qty': p_qty,
@@ -544,6 +635,8 @@ class IBKRModule(Module):
 
             # Calculate totals
             total_value = sum(row['value'] for row in data_rows)
+            total_mtm = sum(row['mtm'] for row in data_rows)
+            total_unrlzd_pnl = sum(row['unrlzd_pnl'] for row in data_rows)
             total_s_qty = sum(row['s_qty'] for row in data_rows)
             total_c_qty = sum(row['c_qty'] for row in data_rows)
             total_p_qty = sum(row['p_qty'] for row in data_rows)
@@ -555,6 +648,8 @@ class IBKRModule(Module):
                 table.add_row(
                     str(row['symbol']),
                     f"{row['value']:,.2f}" if row['value'] != 0 else "",
+                    f"{row['mtm']:,.2f}" if row['mtm'] != 0 else "",
+                    f"{row['unrlzd_pnl']:,.2f}" if row['unrlzd_pnl'] != 0 else "",
                     f"{row['s_qty']:.0f}" if row['s_qty'] != 0 else "",
                     f"{row['c_qty']:.0f}" if row['c_qty'] != 0 else "",
                     f"{row['p_qty']:.0f}" if row['p_qty'] != 0 else "",
@@ -568,6 +663,8 @@ class IBKRModule(Module):
             table.add_row(
                 "TOTAL",
                 f"{total_value:,.2f}",
+                f"{total_mtm:,.2f}",
+                f"{total_unrlzd_pnl:,.2f}",
                 f"{total_s_qty:.0f}",
                 f"{total_c_qty:.0f}",
                 f"{total_p_qty:.0f}",

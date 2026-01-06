@@ -32,6 +32,16 @@ def init_db():
             openCloseIndicator TEXT
         )
     ''')
+
+    # Create market_price table
+    # We drop and recreate to ensure checking for latest schema/primary key during dev
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS market_price (
+            symbol TEXT PRIMARY KEY,
+            price REAL,
+            dateTime TEXT
+        )
+    ''')
     
     conn.commit()
     conn.close()
@@ -111,8 +121,6 @@ def ensure_schema():
     finally:
         conn.close()
 
-
-
 def fetch_all_trades_as_df():
     """
     Retrieves all trades from the database ordered by dateTime.
@@ -126,5 +134,43 @@ def fetch_all_trades_as_df():
     except Exception as e:
         print(f"Error fetching all trades: {e}")
         return pd.DataFrame()
+    finally:
+        conn.close()
+
+def save_market_price(symbol, price, date_time):
+    """
+    Saves a market price to the database.
+    Uses REPLACE to handle updates efficiently.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # REPLACE INTO works because symbol is PRIMARY KEY
+        cursor.execute("INSERT OR REPLACE INTO market_price (symbol, price, dateTime) VALUES (?, ?, ?)", (symbol, price, date_time))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error saving market price for {symbol}: {e}")
+        return False
+    finally:
+        conn.close()
+
+def fetch_latest_market_prices():
+    """
+    Retrieves the latest market price for each symbol.
+    Returns a dictionary {symbol: price}
+    """
+    conn = get_connection()
+    try:
+        # Since we only keep one row per symbol, simple select is enough
+        query = "SELECT symbol, price FROM market_price"
+        cursor = conn.cursor()
+        cursor.execute(query)
+        rows = cursor.fetchall()
+        return {row[0]: row[1] for row in rows}
+    except Exception as e:
+        print(f"Error fetching market prices: {e}")
+        return {}
     finally:
         conn.close()
