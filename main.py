@@ -16,10 +16,8 @@ class TradeToolsApp:
             "panel.border": "#a89984",
             "prompt": "bold #fabd2f",
             "error": "bold #cc241d",
-            "info": "#83a598"
+            "info": "#83a598",
         })
-        self.console = Console(theme=gruvbox_theme, style="base")
-        self.running = True
         self.console = Console(theme=gruvbox_theme, style="base")
         self.running = True
         self.active_module = HomeModule(self)

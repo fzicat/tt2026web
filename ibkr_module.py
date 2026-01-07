@@ -17,6 +17,34 @@ class IBKRModule(Module):
         self.position_map = {}
         self.current_symbol = None
         self.output_content = "IBKR Module Active\nType 'help' or 'h' for a list of commands."
+        
+        # Hardcoded target percentages
+        self.target_percent = {
+            'GOOGL': 10.0,
+            'NVDA': 10.0,
+            'TSLA': 10.0,
+            'ABBV': 5.0,
+            'AMD': 5.0,
+            'COIN' : 5.0,
+            'COST' : 5.0,
+            'DIS' : 5.0,
+            'GLD' : 5.0,
+            'MSFT' : 5.0,
+            'MSTR' : 5.0,
+            'PLTR' : 5.0,
+            'AMZN' : 2.5,
+            'IBIT' : 2.5,
+            'LLY' : 2.5,
+            'MRK' : 2.5,
+            'NFLX' : 2.5,
+            'ORCL' : 2.5,
+            'AVGO' : 2.0,
+            'GLW' : 2.0,
+            'INTC' : 2.0,
+            'META' : 2.0,
+            'SOFI' : 2.0,
+        }
+        
         self.load_trades()
 
     def load_trades(self):
@@ -211,6 +239,8 @@ class IBKRModule(Module):
         - I   | import     > Import daily trades
         - I W | import w   > Import weekly trades
         - M   | mtm        > Get Mark-to-Market Values
+        - SD  | stats day  > Daily PnL Stats
+        - SW  | stats week > Weekly PnL Stats
         - L   | list       > List all positions
         - T   | trades     > List all trades
         - R   | reload     > Reload trades from DB
@@ -221,6 +251,10 @@ class IBKRModule(Module):
         - QQ  | quit quit  > Exit the application'''
         elif cmd in ['m', 'mtm']:
             self.process_mtm_update()
+        elif cmd in ['sd', 'stats day']:
+            self.stats_daily()
+        elif cmd in ['sw', 'stats week']:
+            self.stats_weekly()
         elif cmd in ['d', 'debug']:
             self.debug()
         elif cmd in ['t', 'trades']:
@@ -578,6 +612,117 @@ class IBKRModule(Module):
         except Exception as e:
             self.output_content = f"[error]Error listing trades: {e}[/]"
 
+    def stats_daily(self):
+        try:
+            if self.trades_df.empty:
+                self.output_content = "[info]No trades to analyze.[/]"
+                return
+
+            # Create a working copy
+            df = self.trades_df.copy()
+            df['dateTime'] = pd.to_datetime(df['dateTime'])
+            
+            # Extract date (normalize to midnight)
+            df['date_only'] = df['dateTime'].dt.normalize()
+
+            # Group by date and sum PnL
+            daily_stats = df.groupby('date_only')['realized_pnl'].sum()
+
+            if daily_stats.empty:
+                 self.output_content = "[info]No realized PnL found.[/]"
+                 return
+
+            # Create full date range
+            min_date = daily_stats.index.min()
+            max_date = daily_stats.index.max()
+            
+            # Generate all calendar days to check for weekends with trades
+            all_days = pd.date_range(start=min_date, end=max_date, freq='D')
+            
+            # Reindex to include all days, filling missing with 0
+            daily_stats = daily_stats.reindex(all_days, fill_value=0.0)
+
+            # Filter: Keep if Weekday (Mon=0, Sun=6) < 5 OR PnL != 0
+            # This keeps all Mon-Fri (even if 0) and any Sat/Sun with non-zero PnL
+            mask = (daily_stats.index.dayofweek < 5) | (daily_stats != 0)
+            daily_stats = daily_stats[mask]
+
+            # Prepare table
+            table = Table(title="Daily Stats (PnL)", expand=False)
+            table.add_column("Date", style="cyan")
+            table.add_column("Day", style="yellow")
+            table.add_column("Realized PnL", justify="right")
+
+            total_pnl = 0.0
+
+            for date, pnl in daily_stats.items():
+                total_pnl += pnl
+                day_name = date.strftime("%A")
+                date_str = date.strftime("%Y-%m-%d")
+                
+                style = "blue" if pnl > 0 else "orange1" if pnl < 0 else "dim"
+                pnl_str = f"{pnl:,.2f}" if pnl != 0 else "-"
+                
+                table.add_row(date_str, day_name, f"[{style}]{pnl_str}[/{style}]")
+
+            table.add_section()
+            style = "bold blue" if total_pnl > 0 else "bold orange1" if total_pnl < 0 else "white"
+            table.add_row("TOTAL", "", f"[{style}]{total_pnl:,.2f}[/{style}]", style="bold")
+
+            self.output_content = table
+        except Exception as e:
+            self.output_content = f"[error]Error calculating stats: {e}[/]"
+
+    def stats_weekly(self):
+        try:
+            if self.trades_df.empty:
+                 self.output_content = "[info]No trades to analyze.[/]"
+                 return
+
+            # Create working copy
+            df = self.trades_df.copy()
+            df['dateTime'] = pd.to_datetime(df['dateTime'])
+            
+            # Set index for resampling
+            df.set_index('dateTime', inplace=True)
+            
+            # Resample by Week Ending Friday (W-FRI)
+            weekly_stats = df['realized_pnl'].resample('W-FRI').sum()
+
+            if weekly_stats.empty:
+                self.output_content = "[info]No realized PnL found.[/]"
+                return
+            
+            # Note: resample automatically fills the range with bins, but if there are gaps
+            # at the beginning or end relative to a "clean" week, it handles it.
+            # It also fills gaps with 0 if we sum() on empty bins.
+            
+            # Prepare table
+            table = Table(title="Weekly Stats (PnL - Ending Friday)", expand=False)
+            table.add_column("Week Ending", style="cyan")
+            table.add_column("Realized PnL", justify="right")
+            
+            total_pnl = 0.0
+            
+            for date, pnl in weekly_stats.items():
+                total_pnl += pnl
+                date_str = date.strftime("%Y-%m-%d")
+                
+                # Highlight if non-zero
+                style = "bold blue" if pnl > 0 else "bold orange1" if pnl < 0 else "dim"
+                pnl_str = f"{pnl:,.2f}" if pnl != 0 else "-"
+                
+                table.add_row(date_str, f"[{style}]{pnl_str}[/{style}]")
+                
+            table.add_section()
+            style = "bold blue" if total_pnl > 0 else "bold orange1" if total_pnl < 0 else "white"
+            table.add_row("TOTAL", f"[{style}]{total_pnl:,.2f}[/{style}]", style="bold")
+            
+            self.output_content = table
+
+        except Exception as e:
+            self.output_content = f"[error]Error calculating weekly stats: {e}[/]"
+
     def list_all_positions(self, order_by='mtm', ascending=False):
         try:
             if self.trades_df.empty:
@@ -594,6 +739,7 @@ class IBKRModule(Module):
             table.add_column("Value", justify="right", style="magenta")
             table.add_column("MTM", justify="right", style="blue")
             table.add_column("MTM %", justify="right", style="blue")
+            table.add_column("Tgt %", justify="right", style="cyan")
             table.add_column("Unrlzd PnL", justify="right")
             table.add_column("Stock", justify="right", style="magenta")
             table.add_column("Call", justify="right", style="magenta")
@@ -634,7 +780,8 @@ class IBKRModule(Module):
                         'p_qty': p_qty,
                         's_pnl': s_pnl,
                         'c_pnl': c_pnl,
-                        'p_pnl': p_pnl
+                        'p_pnl': p_pnl,
+                        'target_pct': self.target_percent.get(symbol, 0.0)
                      })
 
             # Sort
@@ -655,6 +802,7 @@ class IBKRModule(Module):
             total_s_pnl = sum(row['s_pnl'] for row in data_rows)
             total_c_pnl = sum(row['c_pnl'] for row in data_rows)
             total_p_pnl = sum(row['p_pnl'] for row in data_rows)
+            total_target_pct = sum(row['target_pct'] for row in data_rows)
 
             def fmt_pnl(val):
                 if val == 0: return ""
@@ -667,6 +815,7 @@ class IBKRModule(Module):
                     f"{row['value']:,.2f}" if row['value'] != 0 else "",
                     f"{row['mtm']:,.2f}" if row['mtm'] != 0 else "",
                     f"{row['mtm'] / total_mtm * 100:.2f}%" if total_mtm != 0 and row['mtm'] != 0 else "",
+                    f"{row['target_pct']:.2f}%" if row['target_pct'] != 0 else "",
                     fmt_pnl(row['unrlzd_pnl']),
                     f"{row['s_qty']:.0f}" if row['s_qty'] != 0 else "",
                     f"{row['c_qty']:.0f}" if row['c_qty'] != 0 else "",
@@ -683,6 +832,7 @@ class IBKRModule(Module):
                 f"{total_value:,.2f}",
                 f"{total_mtm:,.2f}",
                 f"{total_mtm / total_mtm * 100:.2f}%" if total_mtm != 0 else "",
+                f"{total_target_pct:.2f}%" if total_target_pct != 0 else "",
                 fmt_pnl(total_unrlzd_pnl),
                 f"{total_s_qty:.0f}",
                 f"{total_c_qty:.0f}",
@@ -694,6 +844,7 @@ class IBKRModule(Module):
             )
             
             self.output_content = table
+            
         except Exception as e:
             self.output_content = f"[error]Error listing all positions: {e}[/]"
 
