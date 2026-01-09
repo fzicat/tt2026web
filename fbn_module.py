@@ -20,7 +20,8 @@ class FBNModule(Module):
             {'name': 'CRI', 'portfolio': 'Personnel', 'currency': 'CAD'},
             {'name': 'REEE', 'portfolio': 'Personnel', 'currency': 'CAD'},
             {'name': 'CELI', 'portfolio': 'Personnel', 'currency': 'CAD'},
-            {'name': 'MPM', 'portfolio': 'Personnel', 'currency': 'CAD'},
+            {'name': 'MM MARGE', 'portfolio': 'Personnel', 'currency': 'CAD'},
+            {'name': 'MM CELI', 'portfolio': 'Personnel', 'currency': 'CAD'},
             {'name': 'GFZ CAD', 'portfolio': 'Gestion FZ', 'currency': 'CAD'},
             {'name': 'GFZ USD', 'portfolio': 'Gestion FZ', 'currency': 'USD'},
         ]
