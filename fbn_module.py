@@ -9,6 +9,7 @@ class FBNModule(Module):
         super().__init__(app)
         self.df = pd.DataFrame()
         self.monthly_df = pd.DataFrame()
+        self.yearly_df = pd.DataFrame()
         self.output_content = "FBN Module Active\nType 'help' or 'h' for a list of commands."
         
         self.load_fbn_data()
@@ -22,7 +23,7 @@ class FBNModule(Module):
 
             # Apply Currency Conversion (USD -> CAD)
             # Multiply columns by rate where currency is 'USD'
-            cols_to_convert = ['deposit', 'asset', 'fee']
+            cols_to_convert = ['investment', 'deposit', 'asset', 'fee', 'dividend', 'interest', 'tax', 'other', 'cash', 'distribution']
             mask = self.df['currency'] == 'USD'
             
             for col in cols_to_convert:
@@ -66,6 +67,35 @@ class FBNModule(Module):
                 axis=1
             )
             
+            # Prepare Yearly Data
+            temp_df = self.monthly_df.copy()
+            temp_df['year'] = temp_df['date'].dt.year
+            
+            yearly_groups = temp_df.groupby('year')
+            yearly_agg = []
+            
+            for year, group in yearly_groups:
+                deposit = group['deposit'].sum()
+                fee = group['fee'].sum()
+                asset = group.iloc[-1]['asset']
+                
+                yearly_agg.append({
+                    'year': year,
+                    'deposit': deposit,
+                    'asset': asset,
+                    'fee': fee
+                })
+                
+            self.yearly_df = pd.DataFrame(yearly_agg)
+            if not self.yearly_df.empty:
+                self.yearly_df = self.yearly_df.sort_values('year')
+                self.yearly_df['prev_asset'] = self.yearly_df['asset'].shift(1).fillna(0.0)
+                self.yearly_df['pnl'] = self.yearly_df['asset'] - self.yearly_df['deposit'] - self.yearly_df['prev_asset']
+                self.yearly_df['pct'] = self.yearly_df.apply(
+                    lambda row: (row['pnl'] / row['prev_asset']) * 100 if row['prev_asset'] != 0 else 0.0, 
+                    axis=1
+                )
+            
         else:
             self.app.console.print("[error]No FBN data found.[/]")
 
@@ -80,10 +110,13 @@ class FBNModule(Module):
         elif cmd in ['h', 'help']:
             self.output_content = '''FBN commands:
         - LM  | list monthly > List monthly stats
+        - LY  | list yearly  > List yearly stats
         - Q   | quit         > Return to main menu
         - QQ  | quit quit    > Exit the application'''
         elif cmd in ['lm', 'list monthly']:
             self.list_monthly()
+        elif cmd in ['ly', 'list yearly']:
+            self.list_yearly()
         elif cmd == "":
             pass
         else:
@@ -137,6 +170,49 @@ class FBNModule(Module):
             
         except Exception as e:
             self.output_content = f"[error]Error listing monthly stats: {e}[/]"
+
+    def list_yearly(self):
+        try:
+            if self.yearly_df.empty:
+                self.output_content = "[info]No yearly data available.[/]"
+                return
+
+            table = Table(title="FBN Yearly Stats", expand=False)
+            table.add_column("Year", style="cyan")
+            table.add_column("Deposit", justify="right")
+            table.add_column("Asset", justify="right", style="magenta")
+            table.add_column("Fee", justify="right")
+            table.add_column("PnL", justify="right")
+            table.add_column("Pct", justify="right")
+
+            for _, row in self.yearly_df.iterrows():
+                year_str = str(row['year'])
+                
+                deposit = row['deposit']
+                asset = row['asset']
+                fee = row['fee']
+                pnl = row['pnl']
+                pct = row['pct']
+                
+                # Formatting
+                pnl_style = "bold blue" if pnl > 0 else "bold orange1" if pnl < 0 else "dim"
+                pct_style = "bold blue" if pct > 0 else "bold orange1" if pct < 0 else "dim"
+                
+                table.add_row(
+                    year_str,
+                    f"{deposit:,.2f}" if deposit != 0 else "-",
+                    f"{asset:,.2f}",
+                    f"{fee:,.2f}" if fee != 0 else "-",
+                    f"[{pnl_style}]{pnl:,.2f}[/{pnl_style}]",
+                    f"[{pct_style}]{pct:,.2f}%[/{pct_style}]"
+                )
+            
+            self.app.console.clear()
+            self.app.console.print(table)
+            self.app.skip_render = True
+            
+        except Exception as e:
+            self.output_content = f"[error]Error listing yearly stats: {e}[/]"
 
     def get_output(self):
         return self.output_content
