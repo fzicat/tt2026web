@@ -14,6 +14,17 @@ class FBNModule(Module):
         
         self.load_fbn_data()
 
+        self.accounts = [
+            {'name': 'MARGE', 'portfolio': 'Personnel', 'currency': 'CAD'},
+            {'name': 'REER', 'portfolio': 'Personnel', 'currency': 'CAD'},
+            {'name': 'CRI', 'portfolio': 'Personnel', 'currency': 'CAD'},
+            {'name': 'REEE', 'portfolio': 'Personnel', 'currency': 'CAD'},
+            {'name': 'CELI', 'portfolio': 'Personnel', 'currency': 'CAD'},
+            {'name': 'MPM', 'portfolio': 'Personnel', 'currency': 'CAD'},
+            {'name': 'GFZ CAD', 'portfolio': 'Gestion FZ', 'currency': 'CAD'},
+            {'name': 'GFZ USD', 'portfolio': 'Gestion FZ', 'currency': 'USD'},
+        ]
+
     def load_fbn_data(self):
         self.df = fbn_db_handler.fetch_fbn_data()
         
@@ -115,8 +126,12 @@ class FBNModule(Module):
         - QQ  | quit quit    > Exit the application'''
         elif cmd in ['lm', 'list monthly']:
             self.list_monthly()
+        elif cmd in ['lm', 'list monthly']:
+            self.list_monthly()
         elif cmd in ['ly', 'list yearly']:
             self.list_yearly()
+        elif cmd in ['a', 'add', 'e', 'edit']:
+            self.add_monthly_data()
         elif cmd == "":
             pass
         else:
@@ -213,6 +228,144 @@ class FBNModule(Module):
             
         except Exception as e:
             self.output_content = f"[error]Error listing yearly stats: {e}[/]"
+
+    def add_monthly_data(self):
+        self.app.console.clear()
+        self.app.console.print("[bold cyan]--- Add/Edit Monthly Data ---[/]")
+        
+        # 1. Date Selection
+        target_date = self.get_target_date()
+        if not target_date:
+            self.output_content = "[info]Operation cancelled.[/]"
+            return
+
+        self.app.console.print(f"[info]Selected Date: {target_date.strftime('%Y-%m-%d')}[/]")
+
+        # 2. Account Loop replaced by Menu Selection
+        while True:
+            self.app.console.print("\n[bold]Select Account to Edit:[/]")
+            for idx, acc in enumerate(self.accounts, 1):
+                self.app.console.print(f" {idx}. {acc['name']} ([dim]{acc['currency']}[/dim])")
+            
+            choice = self.app.console.input("\n[prompt]Select account # (or 'q' to finish) >> [/]").lower()
+            
+            if choice in ['q', 'quit']:
+                break
+            
+            try:
+                idx = int(choice)
+                if 1 <= idx <= len(self.accounts):
+                    account_info = self.accounts[idx-1]
+                    self.process_account_entry(account_info, target_date)
+                else:
+                    self.app.console.print("[error]Invalid selection.[/]")
+            except ValueError:
+                self.app.console.print("[error]Invalid input.[/]")
+        
+        # Refresh Data
+        self.load_fbn_data()
+        self.output_content = "[success]Data entry completed and reloaded.[/]"
+
+    def get_target_date(self):
+        from datetime import datetime, timedelta
+        import calendar
+
+        # Default: Last day of previous month
+        today = datetime.now()
+        first = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        last_month = first - timedelta(days=1)
+        default_date_str = last_month.strftime("%Y-%m-%d") # Use full date for internal consistency, user thinks in month/year
+
+        date_input = self.app.console.input(f"[prompt]Enter date (YYYY-MM-DD) or Month/Year (MM/YYYY) [[dim]{default_date_str}[/dim]] >> [/]")
+        
+        if not date_input:
+            return last_month
+            
+        try:
+             # Try YYYY-MM-DD
+            return datetime.strptime(date_input, "%Y-%m-%d")
+        except ValueError:
+            pass
+            
+        try:
+            # Try MM/YYYY -> convert to last day of that month
+            month, year = map(int, date_input.split('/'))
+            last_day = calendar.monthrange(year, month)[1]
+            return datetime(year, month, last_day)
+        except ValueError:
+            self.app.console.print("[error]Invalid date format.[/]")
+            return None
+
+    def process_account_entry(self, account_info, date):
+        acc_name = account_info['name']
+        currency = account_info['currency']
+        
+        self.app.console.print(f"\n[bold magenta]--- Account: {acc_name} ({currency}) ---[/]")
+        
+        # Get existing row if any
+        existing_row = pd.Series()
+        if not self.df.empty:
+            mask = (self.df['date'] == date) & (self.df['account'] == acc_name)
+            if mask.any():
+                existing_row = self.df[mask].iloc[0]
+                
+        # 2. Print current asset value if available
+        current_asset = existing_row.get('asset', 'N/A')
+        if current_asset != 'N/A':
+             self.app.console.print(f"Current Asset Value: [bold]{current_asset:,.2f}[/]")
+        else:
+             self.app.console.print(f"Current Asset Value: [dim]N/A[/]")
+
+        # 3. Values Input
+        fields = ['investment', 'deposit', 'interest', 'dividend', 'distribution', 'tax', 'fee', 'other', 'cash', 'asset']
+        values = {}
+        
+        for field in fields:
+            default = existing_row.get(field, 0.0) if not existing_row.empty else 0.0
+            val_input = self.app.console.input(f"{field.capitalize()} [[dim]{default}[/dim]] >> ")
+            try:
+                values[field] = float(val_input) if val_input else float(default)
+            except ValueError:
+                self.app.console.print(f"[warning]Invalid number, using default: {default}[/]")
+                values[field] = float(default)
+
+        if acc_name == 'GFZ USD':
+            rate_default = existing_row.get('rate', 1.0) if not existing_row.empty else 1.0
+            rate_input = self.app.console.input(f"Rate [[dim]{rate_default}[/dim]] >> ")
+            try:
+                values['rate'] = float(rate_input) if rate_input else float(rate_default)
+            except ValueError:
+                 values['rate'] = float(rate_default)
+        else:
+            values['rate'] = 1.0 # Default for CAD
+
+        # 4. Validation
+        variation_encaisse = sum([values[k] for k in ['investment', 'deposit', 'interest', 'dividend', 'distribution', 'tax', 'fee', 'other']])
+        total_placements = values['asset'] - values['cash']
+        
+        self.app.console.print("\n[bold]Validation:[/]")
+        self.app.console.print(f"Variation Encaisse: [cyan]{variation_encaisse:,.2f}[/]")
+        self.app.console.print(f"Total Placements:   [cyan]{total_placements:,.2f}[/]")
+        
+        confirm = self.app.console.input("[prompt]Confirm these values? (Y/n/r[retry]) >> [/]").lower()
+        
+        if confirm == 'n':
+            self.app.console.print("[info]Skipping this account.[/]")
+            return
+        elif confirm == 'r':
+            return self.process_account_entry(account_info, date) # Recursive retry
+            
+        # 5. Insert or Replace
+        entry_data = {
+            'date': date.strftime("%Y-%m-%d"),
+            'account': acc_name,
+            'portfolio': account_info['portfolio'],
+            'currency': currency,
+            **values
+        }
+        
+        fbn_db_handler.save_account_entry(entry_data)
+        self.app.console.print(f"[success]Saved entry for {acc_name}[/]")
 
     def get_output(self):
         return self.output_content

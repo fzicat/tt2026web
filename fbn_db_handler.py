@@ -36,6 +36,10 @@ def init_db():
     conn.close()
     
     ensure_schema()
+    
+def ensure_schema():
+    # Placeholder for future schema updates if needed
+    pass
 
 def fetch_fbn_data():
     """
@@ -50,5 +54,29 @@ def fetch_fbn_data():
     except Exception as e:
         print(f"Error fetching fbn data: {e}")
         return pd.DataFrame()
+    finally:
+        conn.close()
+
+def save_account_entry(entry):
+    """
+    Saves a single account entry to the database.
+    First deletes any existing entry for the same date and account.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        # Delete existing entry if any
+        cursor.execute("DELETE FROM fbn WHERE date = ? AND account = ?", (entry['date'], entry['account']))
+        
+        # Insert new entry
+        columns = ', '.join(entry.keys())
+        placeholders = ', '.join(['?'] * len(entry))
+        sql = f"INSERT INTO fbn ({columns}) VALUES ({placeholders})"
+        
+        cursor.execute(sql, list(entry.values()))
+        conn.commit()
+    except Exception as e:
+        print(f"Error saving account entry: {e}")
+        raise e
     finally:
         conn.close()
