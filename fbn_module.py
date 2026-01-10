@@ -127,10 +127,12 @@ class FBNModule(Module):
         - QQ  | quit quit    > Exit the application'''
         elif cmd in ['lm', 'list monthly']:
             self.list_monthly()
-        elif cmd in ['lm', 'list monthly']:
-            self.list_monthly()
+        elif cmd in ['lma', 'list monthly assets']:
+            self.list_monthly_assets()
         elif cmd in ['ly', 'list yearly']:
             self.list_yearly()
+        elif cmd in ['lya', 'list yearly assets']:
+            self.list_yearly_assets()
         elif cmd in ['a', 'add', 'e', 'edit']:
             self.add_monthly_data()
         elif cmd == "":
@@ -229,6 +231,111 @@ class FBNModule(Module):
             
         except Exception as e:
             self.output_content = f"[error]Error listing yearly stats: {e}[/]"
+
+    def list_monthly_assets(self):
+        try:
+            if self.df.empty:
+                self.output_content = "[info]No data available.[/]"
+                return
+
+            # Pivot table: Date as index, Account as columns, Asset as values
+            pivot_df = self.df.pivot_table(index='date', columns='account', values='asset', aggfunc='sum')
+            
+            # Sort by date
+            pivot_df = pivot_df.sort_index()
+
+            # Ensure columns are in the correct order (as defined in self.accounts)
+            ordered_columns = [acc['name'] for acc in self.accounts if acc['name'] in pivot_df.columns]
+            # Add any extra columns that might exist but aren't in the predefined list
+            extra_columns = [col for col in pivot_df.columns if col not in ordered_columns]
+            final_columns = ordered_columns + extra_columns
+            pivot_df = pivot_df[final_columns]
+
+            # Create Rich Table
+            table = Table(title="FBN Monthly Assets Matrix", expand=False)
+            table.add_column("Date", style="cyan", no_wrap=True)
+            for col in final_columns:
+                table.add_column(col, justify="right")
+            
+            # Add Total column
+            table.add_column("Total", justify="right", style="bold magenta")
+
+            for date, row in pivot_df.iterrows():
+                row_data = [date.strftime('%Y-%m-%d')]
+                total_assets = 0
+                for col in final_columns:
+                    val = row[col]
+                    if pd.notna(val):
+                        row_data.append(f"{val:,.2f}")
+                        total_assets += val
+                    else:
+                        row_data.append("-")
+                
+                row_data.append(f"{total_assets:,.2f}")
+                table.add_row(*row_data)
+
+            self.app.console.clear()
+            self.app.console.print(table)
+            self.app.skip_render = True
+
+        except Exception as e:
+             self.output_content = f"[error]Error listing monthly assets matrix: {e}[/]"
+
+    def list_yearly_assets(self):
+        try:
+            if self.df.empty:
+                self.output_content = "[info]No data available.[/]"
+                return
+
+            # Create a copy to work with
+            temp_df = self.df.copy()
+            temp_df['year'] = temp_df['date'].dt.year
+
+            # Group by year and account, then take the last entry (by date) for each
+            # We sort by date first to ensure 'last' is essentially max date
+            temp_df = temp_df.sort_values('date')
+            yearly_last = temp_df.groupby(['year', 'account']).last().reset_index()
+
+            # Pivot table
+            pivot_df = yearly_last.pivot_table(index='year', columns='account', values='asset', aggfunc='sum')
+            pivot_df = pivot_df.sort_index()
+
+            # Ensure columns order
+            ordered_columns = [acc['name'] for acc in self.accounts if acc['name'] in pivot_df.columns]
+            extra_columns = [col for col in pivot_df.columns if col not in ordered_columns]
+            final_columns = ordered_columns + extra_columns
+            pivot_df = pivot_df[final_columns]
+
+            # Create Rich Table
+            table = Table(title="FBN Yearly Assets Matrix", expand=False)
+            table.add_column("Year", style="cyan", no_wrap=True)
+            for col in final_columns:
+                table.add_column(col, justify="right")
+            
+            # Add Total column
+            table.add_column("Total", justify="right", style="bold magenta")
+
+
+            for year, row in pivot_df.iterrows():
+                row_data = [str(year)]
+                total_assets = 0
+                for col in final_columns:
+                    val = row[col]
+                    if pd.notna(val):
+                        row_data.append(f"{val:,.2f}")
+                        total_assets += val
+                    else:
+                        row_data.append("-")
+                
+                row_data.append(f"{total_assets:,.2f}")
+                table.add_row(*row_data)
+
+            self.app.console.clear()
+            self.app.console.print(table)
+            self.app.skip_render = True
+
+        except Exception as e:
+             self.output_content = f"[error]Error listing yearly assets matrix: {e}[/]"
 
     def add_monthly_data(self):
         self.app.console.clear()
