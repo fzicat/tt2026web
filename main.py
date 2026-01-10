@@ -3,7 +3,8 @@ from rich.layout import Layout
 from rich.panel import Panel
 from rich.text import Text
 from rich.theme import Theme
-import db_handler
+import ibkr_db_handler
+
 from home_module import HomeModule
 
 class TradeToolsApp:
@@ -56,7 +57,7 @@ class TradeToolsApp:
         return layout
 
     def run(self):
-        db_handler.init_db()
+        ibkr_db_handler.init_db()
         
         while self.running:
             if not self.skip_render:

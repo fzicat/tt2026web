@@ -4,8 +4,8 @@
         {
             "previewLimit": 50,
             "driver": "SQLite",
-            "database": "tradetools.db",
-            "name": "tradetools",
+            "database": "ibkr.db",
+            "name": "ibkr",
             "group": "tradetools"
         },
         {
