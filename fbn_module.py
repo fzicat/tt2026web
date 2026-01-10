@@ -224,6 +224,24 @@ class FBNModule(Module):
                     f"[{pnl_style}]{pnl:,.2f}[/{pnl_style}]",
                     f"[{pct_style}]{pct:,.2f}%[/{pct_style}]"
                 )
+
+            # Calculate Totals
+            total_deposit = self.yearly_df['deposit'].sum()
+            total_fee = self.yearly_df['fee'].sum()
+            total_pnl = self.yearly_df['pnl'].sum()
+            current_asset = self.yearly_df.iloc[-1]['asset']
+            
+            total_pnl_style = "bold blue" if total_pnl > 0 else "bold orange1" if total_pnl < 0 else "dim"
+            
+            table.add_section()
+            table.add_row(
+                "Total",
+                f"{total_deposit:,.2f}",
+                f"{current_asset:,.2f}",
+                f"{total_fee:,.2f}",
+                f"[{total_pnl_style}]{total_pnl:,.2f}[/{total_pnl_style}]",
+                "-"
+            )
             
             self.app.console.clear()
             self.app.console.print(table)
