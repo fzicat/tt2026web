@@ -9,6 +9,8 @@ class EquityModule(Module):
         super().__init__(app)
         self.equity_df = pd.DataFrame()
         self.output_content = "Equity Module Active\nType 'help' for commands."
+        self.current_subset = None  # Store current view for editing
+        self.current_date = None    # Store selected date for editing
         self.load_equity_data()
 
     def load_equity_data(self):
@@ -28,6 +30,9 @@ class EquityModule(Module):
              # Create empty with expected columns if DB is empty to avoid KeyError later
             self.equity_df = pd.DataFrame(columns=['id', 'date', 'description', 'account', 'category', 'currency', 'rate', 'balance', 'tax', 'balance_cad', 'balance_net'])
 
+        # Sort by Description
+        self.equity_df.sort_values('description', key=lambda x: x.str.lower(), inplace=True)
+
     def handle_command(self, command):
         cmd = command.lower().strip()
         if cmd in ['q', 'quit']:
@@ -37,14 +42,26 @@ class EquityModule(Module):
             self.app.quit()
         elif cmd in ['h', 'help']:
             self.output_content = '''Equity Commands:
-    - a | add  : Add a new entry
-    - l | list : List entries by date
-    - q | quit : Return to main menu
-    - qq       : Exit to prompt'''
+    - a | add    : Add a new entry
+    - l | list   : List entries by date
+    - e <number> : Edit an entry by its index
+    - q | quit   : Return to main menu
+    - qq         : Exit to prompt'''
         elif cmd in ['a', 'add']:
             self.add_entry()
         elif cmd in ['l', 'list']:
             self.list_unique_dates()
+        elif cmd.startswith('e ') or cmd.startswith('edit '):
+            # Parse the line number
+            parts = cmd.split()
+            if len(parts) == 2:
+                try:
+                    line_num = int(parts[1])
+                    self.edit_entry(line_num)
+                except ValueError:
+                    self.output_content = "[error]Invalid line number.[/]"
+            else:
+                self.output_content = "[error]Usage: e <line_number>[/]"
         elif cmd == "":
             pass
         else:
@@ -65,13 +82,13 @@ class EquityModule(Module):
             desc_val = self.app.console.input("Description >> ")
             
             # 3. Account
-            self.app.console.print("Accounts: [1] Personnel, [2] Gestion FZ, [3] BZ")
+            self.app.console.print("Accounts:\n[1] Personnel,\n[2] Gestion FZ")
             acc_choice = self.app.console.input("Account >> ")
-            acc_map = {'1': 'Personnel', '2': 'Gestion FZ', '3': 'BZ', 'personnel': 'Personnel', 'gestion fz': 'Gestion FZ', 'bz': 'BZ'}
+            acc_map = {'1': 'Personnel', '2': 'Gestion FZ', 'personnel': 'Personnel', 'gestion fz': 'Gestion FZ'}
             account_val = acc_map.get(acc_choice.lower(), acc_choice) # Fallback to input if not mapped, though prompts implies strict choice, flexibility is good. User prompt said "choices: ...", usually implies select or type. 
             
             # 4. Category
-            self.app.console.print("Categories: [1] Bitcoin, [2] Cash, [3] Immobilier, [4] FBN, [5] IBKR, [6] BZ")
+            self.app.console.print("Categories:\n[1] Bitcoin,\n[2] Cash,\n[3] Immobilier,\n[4] FBN,\n[5] IBKR,\n[6] BZ")
             cat_choice = self.app.console.input("Category >> ")
             cat_map = {'1': 'Bitcoin', '2': 'Cash', '3': 'Immobilier', '4': 'FBN', '5': 'IBKR', '6': 'BZ'}
             # Handle text input or number
@@ -84,7 +101,7 @@ class EquityModule(Module):
             elif category_val.lower() == 'ibkr': category_val = 'IBKR'
             
             # 5. Currency
-            self.app.console.print("Currency: [1] CAD, [2] USD, [3] SAT")
+            self.app.console.print("Currency:\n[1] CAD,\n[2] USD,\n[3] SAT")
             cur_choice = self.app.console.input("Currency [[dim]CAD[/dim]] >> ").lower()
             if cur_choice == '2' or cur_choice == 'usd':
                 currency_val = 'USD'
@@ -171,11 +188,16 @@ class EquityModule(Module):
     def show_table_for_date(self, date_val):
         # Filter
         mask = self.equity_df['date'] == date_val
-        subset = self.equity_df[mask]
+        subset = self.equity_df[mask].reset_index(drop=False)  # Keep original index as 'index' column
+        
+        # Store for editing
+        self.current_subset = subset
+        self.current_date = date_val
         
         date_str = pd.to_datetime(date_val).strftime('%Y-%m-%d')
         table = Table(title=f"Equity entries for {date_str}")
         
+        table.add_column("#", style="dim", justify="right")
         table.add_column("Account", style="cyan")
         table.add_column("Category", style="magenta")
         table.add_column("Desc")
@@ -186,8 +208,9 @@ class EquityModule(Module):
         table.add_column("Tax", justify="right")
         table.add_column("Bal Net", justify="right", style="bold green")
         
-        for _, row in subset.iterrows():
+        for i, row in subset.iterrows():
             table.add_row(
+                str(i + 1),  # 1-indexed for user display
                 str(row['account']),
                 str(row['category']),
                 str(row['description']),
@@ -205,7 +228,7 @@ class EquityModule(Module):
         
         table.add_section()
         table.add_row(
-            "TOTAL", "", "", "", "", "",
+            "", "TOTAL", "", "", "", "", "",
             f"{total_bal_cad:,.2f}",
             "",
             f"{total_bal_net:,.2f}",
@@ -216,6 +239,141 @@ class EquityModule(Module):
         self.app.console.print(table)
         self.app.skip_render = True
         self.output_content = "" # Cleared by direct print
+
+    def edit_entry(self, line_num):
+        """Edit an existing entry by its display line number"""
+        if self.current_subset is None or self.current_subset.empty:
+            self.output_content = "[error]No entries to edit. Use 'l' to list entries first.[/]"
+            return
+        
+        # Line numbers are 1-indexed for display
+        row_idx = line_num - 1
+        
+        if row_idx < 0 or row_idx >= len(self.current_subset):
+            self.output_content = f"[error]Line {line_num} not found. Valid range: 1-{len(self.current_subset)}[/]"
+            return
+        
+        row = self.current_subset.iloc[row_idx]
+        entry_id = int(row['id'])  # Convert to native Python int for SQLite
+        
+        self.app.console.clear()
+        self.app.console.print(f"[bold cyan]--- Edit Entry #{line_num} ---[/]")
+        self.app.console.print(f"[dim]Editing: {row['description']} ({row['account']})[/]\n")
+        
+        # 1. Date
+        current_date = pd.to_datetime(row['date']).strftime('%Y-%m-%d')
+        date_in = self.app.console.input(f"Date [[dim]{current_date}[/dim]] >> ")
+        date_val = date_in if date_in else current_date
+        
+        # 2. Description
+        current_desc = str(row['description'])
+        desc_in = self.app.console.input(f"Description [[dim]{current_desc}[/dim]] >> ")
+        desc_val = desc_in if desc_in else current_desc
+        
+        # 3. Account
+        current_account = str(row['account'])
+        self.app.console.print(f"Accounts:\n[1] Personnel,\n[2] Gestion FZ\n(current: {current_account})")
+        acc_choice = self.app.console.input(f"Account [[dim]{current_account}[/dim]] >> ")
+        if acc_choice:
+            acc_map = {'1': 'Personnel', '2': 'Gestion FZ', 'personnel': 'Personnel', 'gestion fz': 'Gestion FZ'}
+            account_val = acc_map.get(acc_choice.lower(), acc_choice)
+        else:
+            account_val = current_account
+        
+        # 4. Category
+        current_cat = str(row['category'])
+        self.app.console.print(f"Categories:\n[1] Bitcoin,\n[2] Cash,\n[3] Immobilier,\n[4] FBN,\n[5] IBKR,\n[6] BZ\n(current: {current_cat})")
+        cat_choice = self.app.console.input(f"Category [[dim]{current_cat}[/dim]] >> ")
+        if cat_choice:
+            cat_map = {'1': 'Bitcoin', '2': 'Cash', '3': 'Immobilier', '4': 'FBN', '5': 'IBKR', '6': 'BZ'}
+            category_val = cat_map.get(cat_choice, cat_choice)
+            # Clean up case if they typed text
+            if category_val.lower() == 'bitcoin': category_val = 'Bitcoin'
+            elif category_val.lower() == 'cash': category_val = 'Cash'
+            elif category_val.lower() == 'immobilier': category_val = 'Immobilier'
+            elif category_val.lower() == 'fbn': category_val = 'FBN'
+            elif category_val.lower() == 'ibkr': category_val = 'IBKR'
+        else:
+            category_val = current_cat
+        
+        # 5. Currency
+        current_currency = str(row['currency'])
+        self.app.console.print(f"Currency:\n[1] CAD,\n[2] USD,\n[3] SAT\n(current: {current_currency})")
+        cur_choice = self.app.console.input(f"Currency [[dim]{current_currency}[/dim]] >> ").lower()
+        if cur_choice:
+            if cur_choice == '1' or cur_choice == 'cad':
+                currency_val = 'CAD'
+            elif cur_choice == '2' or cur_choice == 'usd':
+                currency_val = 'USD'
+            elif cur_choice == '3' or cur_choice == 'sat':
+                currency_val = 'SAT'
+            else:
+                currency_val = current_currency
+        else:
+            currency_val = current_currency
+            
+        # 6. Rate
+        current_rate = row['rate']
+        rate_in = self.app.console.input(f"Rate [[dim]{current_rate}[/dim]] >> ")
+        try:
+            rate_val = float(rate_in) if rate_in else current_rate
+        except ValueError:
+            rate_val = current_rate
+            
+        # 7. Balance
+        current_balance = row['balance']
+        bal_in = self.app.console.input(f"Balance [[dim]{current_balance:,.2f}[/dim]] >> ")
+        try:
+            balance_val = float(bal_in) if bal_in else current_balance
+        except ValueError:
+            balance_val = current_balance
+            
+        # 8. Tax
+        current_tax = row['tax']
+        tax_in = self.app.console.input(f"Tax (0.0 - 1.0) [[dim]{current_tax}[/dim]] >> ")
+        try:
+            tax_val = float(tax_in) if tax_in else current_tax
+        except ValueError:
+            tax_val = current_tax
+        
+        # Show summary and confirm
+        self.app.console.print("\n[bold cyan]--- Summary of Changes ---[/]")
+        self.app.console.print(f"Date:        {date_val}")
+        self.app.console.print(f"Description: {desc_val}")
+        self.app.console.print(f"Account:     {account_val}")
+        self.app.console.print(f"Category:    {category_val}")
+        self.app.console.print(f"Currency:    {currency_val}")
+        self.app.console.print(f"Rate:        {rate_val}")
+        self.app.console.print(f"Balance:     {balance_val:,.2f}")
+        self.app.console.print(f"Tax:         {tax_val}")
+        
+        confirm = self.app.console.input("\nConfirm update? (y/n) >> ").lower()
+        
+        if confirm == 'y':
+            entry = {
+                'date': date_val,
+                'description': desc_val,
+                'account': account_val,
+                'category': category_val,
+                'currency': currency_val,
+                'rate': float(rate_val),
+                'balance': float(balance_val),
+                'tax': float(tax_val)
+            }
+            
+            if equity_db_handler.update_equity_entry(entry_id, entry):
+                self.app.console.print("[success]Entry updated![/]")
+                self.load_equity_data()
+                self.output_content = "Data updated."
+            else:
+                self.app.console.print("[error]Failed to update entry.[/]")
+                self.output_content = "Update failed."
+        else:
+            self.output_content = "Edit cancelled."
+        
+        # Clear the stored subset after editing
+        self.current_subset = None
+        self.current_date = None
 
     def get_output(self):
         return self.output_content

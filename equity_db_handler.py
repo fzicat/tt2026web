@@ -63,3 +63,28 @@ def fetch_equity_data():
         return pd.DataFrame()
     finally:
         conn.close()
+
+def update_equity_entry(entry_id, entry_data):
+    """
+    Updates an existing equity entry by ID.
+    entry_id: the ID of the entry to update
+    entry_data: dict containing column names and values to update
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    set_clauses = ', '.join([f"{k} = ?" for k in entry_data.keys()])
+    sql = f"UPDATE equity SET {set_clauses} WHERE id = ?"
+    
+    try:
+        print(sql)
+        print(list(entry_data.values()) + [entry_id])
+        cursor.execute(sql, list(entry_data.values()) + [entry_id])
+        print(cursor.rowcount)
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error updating equity entry: {e}")
+        return False
+    finally:
+        conn.close()
