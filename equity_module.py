@@ -237,6 +237,51 @@ class EquityModule(Module):
         
         self.app.console.clear()
         self.app.console.print(table)
+        
+        # Table 2: balance_net by account
+        account_summary = subset.groupby('account')[['balance_cad', 'balance_net']].sum().reset_index()
+        account_summary = account_summary.sort_values('balance_net', ascending=False)
+        account_table = Table(title="Balance by Account")
+        account_table.add_column("Account", style="cyan")
+        account_table.add_column("Balance CAD", justify="right", style="green")
+        account_table.add_column("Balance Net", justify="right", style="bold green")
+        
+        for _, row in account_summary.iterrows():
+            account_table.add_row(
+                str(row['account']),
+                f"{row['balance_cad']:,.2f}",
+                f"{row['balance_net']:,.2f}"
+            )
+        
+        # Add total row
+        account_table.add_section()
+        account_table.add_row("TOTAL", f"{account_summary['balance_cad'].sum():,.2f}", f"{account_summary['balance_net'].sum():,.2f}", style="bold")
+        
+        self.app.console.print()
+        self.app.console.print(account_table)
+        
+        # Table 3: balance_net by category
+        category_summary = subset.groupby('category')[['balance_cad', 'balance_net']].sum().reset_index()
+        category_summary = category_summary.sort_values('balance_net', ascending=False)
+        category_table = Table(title="Balance by Category")
+        category_table.add_column("Category", style="magenta")
+        category_table.add_column("Balance CAD", justify="right", style="green")
+        category_table.add_column("Balance Net", justify="right", style="bold green")
+        
+        for _, row in category_summary.iterrows():
+            category_table.add_row(
+                str(row['category']),
+                f"{row['balance_cad']:,.2f}",
+                f"{row['balance_net']:,.2f}"
+            )
+        
+        # Add total row
+        category_table.add_section()
+        category_table.add_row("TOTAL", f"{category_summary['balance_cad'].sum():,.2f}", f"{category_summary['balance_net'].sum():,.2f}", style="bold")
+        
+        self.app.console.print()
+        self.app.console.print(category_table)
+        
         self.app.skip_render = True
         self.output_content = "" # Cleared by direct print
 
