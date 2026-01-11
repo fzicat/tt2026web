@@ -33,15 +33,18 @@ class EquityModule(Module):
         if cmd in ['q', 'quit']:
             from home_module import HomeModule
             self.app.switch_module(HomeModule(self.app))
+        elif cmd == 'qq':
+            self.app.quit()
         elif cmd in ['h', 'help']:
             self.output_content = '''Equity Commands:
     - a | add  : Add a new entry
     - l | list : List entries by date
-    - q | quit : Return to main menu'''
+    - q | quit : Return to main menu
+    - qq       : Exit to prompt'''
         elif cmd in ['a', 'add']:
             self.add_entry()
         elif cmd in ['l', 'list']:
-            self.list_entries()
+            self.list_unique_dates()
         elif cmd == "":
             pass
         else:
@@ -139,7 +142,7 @@ class EquityModule(Module):
         self.load_equity_data()
         self.output_content = "Data updated."
 
-    def list_entries(self):
+    def list_unique_dates(self):
         if self.equity_df.empty:
             self.output_content = "[info]No equity data found.[/]"
             return
