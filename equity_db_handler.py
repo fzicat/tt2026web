@@ -88,3 +88,48 @@ def update_equity_entry(entry_id, entry_data):
         return False
     finally:
         conn.close()
+
+def save_equity_entries(entries_list):
+    """
+    Bulk insert multiple equity entries in a single transaction.
+    entries_list: list of dicts, each containing column names and values
+    """
+    if not entries_list:
+        return True
+    
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    # Use first entry to get column names
+    columns = ', '.join(entries_list[0].keys())
+    placeholders = ', '.join(['?'] * len(entries_list[0]))
+    sql = f"INSERT INTO equity ({columns}) VALUES ({placeholders})"
+    
+    try:
+        for entry in entries_list:
+            cursor.execute(sql, list(entry.values()))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error saving equity entries: {e}")
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+def delete_equity_entry(entry_id):
+    """
+    Delete a single equity entry by ID.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("DELETE FROM equity WHERE id = ?", (entry_id,))
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        print(f"Error deleting equity entry: {e}")
+        return False
+    finally:
+        conn.close()

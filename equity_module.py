@@ -45,12 +45,16 @@ class EquityModule(Module):
     - a | add    : Add a new entry
     - l | list   : List entries by date
     - e <number> : Edit an entry by its index
+    - d <number> : Delete an entry by its index
+    - c | copy   : Copy entries from one date to another
     - q | quit   : Return to main menu
     - qq         : Exit to prompt'''
         elif cmd in ['a', 'add']:
             self.add_entry()
         elif cmd in ['l', 'list']:
             self.list_unique_dates()
+        elif cmd in ['c', 'copy']:
+            self.copy_entries_for_date()
         elif cmd.startswith('e ') or cmd.startswith('edit '):
             # Parse the line number
             parts = cmd.split()
@@ -62,6 +66,17 @@ class EquityModule(Module):
                     self.output_content = "[error]Invalid line number.[/]"
             else:
                 self.output_content = "[error]Usage: e <line_number>[/]"
+        elif cmd.startswith('d ') or cmd.startswith('delete '):
+            # Parse the line number for delete
+            parts = cmd.split()
+            if len(parts) == 2:
+                try:
+                    line_num = int(parts[1])
+                    self.delete_entry(line_num)
+                except ValueError:
+                    self.output_content = "[error]Invalid line number.[/]"
+            else:
+                self.output_content = "[error]Usage: d <line_number>[/]"
         elif cmd == "":
             pass
         else:
@@ -417,6 +432,129 @@ class EquityModule(Module):
             self.output_content = "Edit cancelled."
         
         # Clear the stored subset after editing
+        self.current_subset = None
+        self.current_date = None
+
+    def copy_entries_for_date(self):
+        """Copy all entries from a source date to a new target date with balance=0, rate=0"""
+        if self.equity_df.empty:
+            self.output_content = "[info]No equity data found.[/]"
+            return
+
+        # Get unique dates
+        unique_dates = sorted(self.equity_df['date'].unique(), reverse=True)
+        
+        self.app.console.clear()
+        self.app.console.print("[bold cyan]--- Copy Entries by Date ---[/]")
+        self.app.console.print("[dim]Select source date to copy from:[/]\n")
+        
+        for i, dt in enumerate(unique_dates, 1):
+            dt_str = pd.to_datetime(dt).strftime('%Y-%m-%d')
+            self.app.console.print(f"{i}. {dt_str}")
+            
+        choice = self.app.console.input("\nSelect source date number >> ")
+        try:
+            idx = int(choice) - 1
+            if idx < 0 or idx >= len(unique_dates):
+                self.output_content = "[error]Invalid selection.[/]"
+                return
+            source_date = unique_dates[idx]
+        except ValueError:
+            self.output_content = "[error]Invalid input.[/]"
+            return
+        
+        # Prompt for target date
+        source_date_str = pd.to_datetime(source_date).strftime('%Y-%m-%d')
+        default_target = datetime.now().strftime("%Y-%m-%d")
+        
+        self.app.console.print(f"\n[dim]Source date: {source_date_str}[/]")
+        target_in = self.app.console.input(f"Target date [[dim]{default_target}[/dim]] >> ")
+        target_date = target_in if target_in else default_target
+        
+        # Get entries for source date
+        mask = self.equity_df['date'] == source_date
+        source_entries = self.equity_df[mask]
+        
+        if source_entries.empty:
+            self.output_content = "[error]No entries found for source date.[/]"
+            return
+        
+        # Create new entries
+        new_entries = []
+        for _, row in source_entries.iterrows():
+            new_entry = {
+                'date': target_date,
+                'description': row['description'],
+                'account': row['account'],
+                'category': row['category'],
+                'currency': row['currency'],
+                'rate': 0.0,
+                'balance': 0.0,
+                'tax': row['tax']
+            }
+            new_entries.append(new_entry)
+        
+        # Show summary and confirm
+        self.app.console.print(f"\n[bold cyan]Will copy {len(new_entries)} entries:[/]")
+        self.app.console.print(f"  From: {source_date_str}")
+        self.app.console.print(f"  To:   {target_date}")
+        self.app.console.print(f"  With: balance=0, rate=0")
+        
+        confirm = self.app.console.input("\nConfirm copy? (y/n) >> ").lower()
+        
+        if confirm == 'y':
+            if equity_db_handler.save_equity_entries(new_entries):
+                self.app.console.print(f"[success]{len(new_entries)} entries copied![/]")
+                self.load_equity_data()
+                self.output_content = f"Copied {len(new_entries)} entries to {target_date}."
+            else:
+                self.app.console.print("[error]Failed to copy entries.[/]")
+                self.output_content = "Copy failed."
+        else:
+            self.output_content = "Copy cancelled."
+
+    def delete_entry(self, line_num):
+        """Delete an existing entry by its display line number"""
+        if self.current_subset is None or self.current_subset.empty:
+            self.output_content = "[error]No entries to delete. Use 'l' to list entries first.[/]"
+            return
+        
+        # Line numbers are 1-indexed for display
+        row_idx = line_num - 1
+        
+        if row_idx < 0 or row_idx >= len(self.current_subset):
+            self.output_content = f"[error]Line {line_num} not found. Valid range: 1-{len(self.current_subset)}[/]"
+            return
+        
+        row = self.current_subset.iloc[row_idx]
+        entry_id = int(row['id'])
+        
+        self.app.console.clear()
+        self.app.console.print(f"[bold red]--- Delete Entry #{line_num} ---[/]")
+        self.app.console.print(f"\n[bold]Entry details:[/]")
+        self.app.console.print(f"  Date:        {pd.to_datetime(row['date']).strftime('%Y-%m-%d')}")
+        self.app.console.print(f"  Description: {row['description']}")
+        self.app.console.print(f"  Account:     {row['account']}")
+        self.app.console.print(f"  Category:    {row['category']}")
+        self.app.console.print(f"  Currency:    {row['currency']}")
+        self.app.console.print(f"  Rate:        {row['rate']}")
+        self.app.console.print(f"  Balance:     {row['balance']:,.2f}")
+        self.app.console.print(f"  Tax:         {row['tax']}")
+        
+        confirm = self.app.console.input("\n[bold red]Confirm DELETE?[/] (y/n) >> ").lower()
+        
+        if confirm == 'y':
+            if equity_db_handler.delete_equity_entry(entry_id):
+                self.app.console.print("[success]Entry deleted![/]")
+                self.load_equity_data()
+                self.output_content = "Entry deleted."
+            else:
+                self.app.console.print("[error]Failed to delete entry.[/]")
+                self.output_content = "Delete failed."
+        else:
+            self.output_content = "Delete cancelled."
+        
+        # Clear stored subset after deletion
         self.current_subset = None
         self.current_date = None
 
