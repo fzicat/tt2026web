@@ -1,5 +1,6 @@
 import pandas as pd
 from rich.table import Table
+from rich.columns import Columns
 from base_module import Module
 import equity_db_handler
 from datetime import datetime
@@ -47,6 +48,7 @@ class EquityModule(Module):
     - e <number> : Edit an entry by its index
     - d <number> : Delete an entry by its index
     - c | copy   : Copy entries from one date to another
+    - p | pivot  : Show pivot tables (date x account/category)
     - q | quit   : Return to main menu
     - qq         : Exit to prompt'''
         elif cmd in ['a', 'add']:
@@ -55,6 +57,8 @@ class EquityModule(Module):
             self.list_unique_dates()
         elif cmd in ['c', 'copy']:
             self.copy_entries_for_date()
+        elif cmd in ['p', 'pivot']:
+            self.show_pivot_tables()
         elif cmd.startswith('e ') or cmd.startswith('edit '):
             # Parse the line number
             parts = cmd.split()
@@ -512,6 +516,76 @@ class EquityModule(Module):
                 self.output_content = "Copy failed."
         else:
             self.output_content = "Copy cancelled."
+
+    def show_pivot_tables(self):
+        """Display two pivot tables side-by-side: date×account and date×category"""
+        if self.equity_df.empty:
+            self.output_content = "[info]No equity data found.[/]"
+            return
+
+        # Format dates for display
+        df = self.equity_df.copy()
+        df['date_str'] = df['date'].dt.strftime('%Y-%m-%d')
+        
+        # Pivot Table 1: date × account
+        pivot_account = df.pivot_table(
+            index='date_str', 
+            columns='account', 
+            values='balance_net', 
+            aggfunc='sum', 
+            fill_value=0
+        ).sort_index(ascending=False)
+        
+        # Pivot Table 2: date × category  
+        pivot_category = df.pivot_table(
+            index='date_str', 
+            columns='category', 
+            values='balance_net', 
+            aggfunc='sum', 
+            fill_value=0
+        ).sort_index(ascending=False)
+        
+        # Build Table 1: Date × Account
+        table1 = Table(title="Balance Net by Account")
+        table1.add_column("Date", style="dim")
+        for col in pivot_account.columns:
+            table1.add_column(str(col), justify="right", style="green")
+        table1.add_column("Total", justify="right", style="bold cyan")
+        
+        for date_str in pivot_account.index:
+            row_values = [date_str]
+            row_total = 0
+            for col in pivot_account.columns:
+                val = pivot_account.loc[date_str, col]
+                row_values.append(f"{val:,.0f}")
+                row_total += val
+            row_values.append(f"{row_total:,.0f}")
+            table1.add_row(*row_values)
+        
+        # Build Table 2: Date × Category
+        table2 = Table(title="Balance Net by Category")
+        table2.add_column("Date", style="dim")
+        for col in pivot_category.columns:
+            table2.add_column(str(col), justify="right", style="magenta")
+        table2.add_column("Total", justify="right", style="bold cyan")
+        
+        for date_str in pivot_category.index:
+            row_values = [date_str]
+            row_total = 0
+            for col in pivot_category.columns:
+                val = pivot_category.loc[date_str, col]
+                row_values.append(f"{val:,.0f}")
+                row_total += val
+            row_values.append(f"{row_total:,.0f}")
+            table2.add_row(*row_values)
+        
+        # Display side-by-side
+        self.app.console.clear()
+        columns = Columns([table1, table2], equal=True, expand=True)
+        self.app.console.print(columns)
+        
+        self.app.skip_render = True
+        self.output_content = ""
 
     def delete_entry(self, line_num):
         """Delete an existing entry by its display line number"""
