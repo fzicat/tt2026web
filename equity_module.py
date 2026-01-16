@@ -214,7 +214,7 @@ class EquityModule(Module):
         self.current_date = date_val
         
         date_str = pd.to_datetime(date_val).strftime('%Y-%m-%d')
-        table = Table(title=f"Equity entries for {date_str}")
+        table = Table(title=f"Equity entries for {date_str}", expand=False, row_styles=["", "on #1d2021"])
         
         table.add_column("#", style="dim", justify="right")
         table.add_column("Account", style="cyan")
@@ -235,7 +235,7 @@ class EquityModule(Module):
                 str(row['description']),
                 str(row['currency']),
                 f"{row['balance']:,.2f}",
-                f"{row['rate']:.2f}",
+                f"{row['rate']:.4f}",
                 f"{row['balance_cad']:,.2f}",
                 f"{row['tax']:.2f}",
                 f"{row['balance_net']:,.2f}"
@@ -518,7 +518,7 @@ class EquityModule(Module):
             self.output_content = "Copy cancelled."
 
     def show_pivot_tables(self):
-        """Display two pivot tables side-by-side: date×account and date×category"""
+        """Display four pivot tables: balance_cad and balance_net for both account and category"""
         if self.equity_df.empty:
             self.output_content = "[info]No equity data found.[/]"
             return
@@ -527,8 +527,25 @@ class EquityModule(Module):
         df = self.equity_df.copy()
         df['date_str'] = df['date'].dt.strftime('%Y-%m-%d')
         
-        # Pivot Table 1: date × account
-        pivot_account = df.pivot_table(
+        # Pivot Tables for balance_cad
+        pivot_account_cad = df.pivot_table(
+            index='date_str', 
+            columns='account', 
+            values='balance_cad', 
+            aggfunc='sum', 
+            fill_value=0
+        ).sort_index(ascending=False)
+        
+        pivot_category_cad = df.pivot_table(
+            index='date_str', 
+            columns='category', 
+            values='balance_cad', 
+            aggfunc='sum', 
+            fill_value=0
+        ).sort_index(ascending=False)
+        
+        # Pivot Tables for balance_net
+        pivot_account_net = df.pivot_table(
             index='date_str', 
             columns='account', 
             values='balance_net', 
@@ -536,8 +553,7 @@ class EquityModule(Module):
             fill_value=0
         ).sort_index(ascending=False)
         
-        # Pivot Table 2: date × category  
-        pivot_category = df.pivot_table(
+        pivot_category_net = df.pivot_table(
             index='date_str', 
             columns='category', 
             values='balance_net', 
@@ -545,44 +561,81 @@ class EquityModule(Module):
             fill_value=0
         ).sort_index(ascending=False)
         
-        # Build Table 1: Date × Account
-        table1 = Table(title="Balance Net by Account")
-        table1.add_column("Date", style="dim")
-        for col in pivot_account.columns:
-            table1.add_column(str(col), justify="right", style="green")
-        table1.add_column("Total", justify="right", style="bold cyan")
+        # Build Table 1: Balance CAD by Account
+        table_cad_account = Table(title="Balance CAD by Account")
+        table_cad_account.add_column("Date", style="dim")
+        for col in pivot_account_cad.columns:
+            table_cad_account.add_column(str(col), justify="right", style="green")
+        table_cad_account.add_column("Total", justify="right", style="bold cyan")
         
-        for date_str in pivot_account.index:
+        for date_str in pivot_account_cad.index:
             row_values = [date_str]
             row_total = 0
-            for col in pivot_account.columns:
-                val = pivot_account.loc[date_str, col]
+            for col in pivot_account_cad.columns:
+                val = pivot_account_cad.loc[date_str, col]
                 row_values.append(f"{val:,.0f}")
                 row_total += val
             row_values.append(f"{row_total:,.0f}")
-            table1.add_row(*row_values)
+            table_cad_account.add_row(*row_values)
         
-        # Build Table 2: Date × Category
-        table2 = Table(title="Balance Net by Category")
-        table2.add_column("Date", style="dim")
-        for col in pivot_category.columns:
-            table2.add_column(str(col), justify="right", style="magenta")
-        table2.add_column("Total", justify="right", style="bold cyan")
+        # Build Table 2: Balance CAD by Category
+        table_cad_category = Table(title="Balance CAD by Category")
+        table_cad_category.add_column("Date", style="dim")
+        for col in pivot_category_cad.columns:
+            table_cad_category.add_column(str(col), justify="right", style="orange1")
+        table_cad_category.add_column("Total", justify="right", style="bold cyan")
         
-        for date_str in pivot_category.index:
+        for date_str in pivot_category_cad.index:
             row_values = [date_str]
             row_total = 0
-            for col in pivot_category.columns:
-                val = pivot_category.loc[date_str, col]
+            for col in pivot_category_cad.columns:
+                val = pivot_category_cad.loc[date_str, col]
                 row_values.append(f"{val:,.0f}")
                 row_total += val
             row_values.append(f"{row_total:,.0f}")
-            table2.add_row(*row_values)
+            table_cad_category.add_row(*row_values)
         
-        # Display side-by-side
+        # Build Table 3: Balance Net by Account
+        table_net_account = Table(title="Balance Net by Account")
+        table_net_account.add_column("Date", style="dim")
+        for col in pivot_account_net.columns:
+            table_net_account.add_column(str(col), justify="right", style="green")
+        table_net_account.add_column("Total", justify="right", style="bold cyan")
+        
+        for date_str in pivot_account_net.index:
+            row_values = [date_str]
+            row_total = 0
+            for col in pivot_account_net.columns:
+                val = pivot_account_net.loc[date_str, col]
+                row_values.append(f"{val:,.0f}")
+                row_total += val
+            row_values.append(f"{row_total:,.0f}")
+            table_net_account.add_row(*row_values)
+        
+        # Build Table 4: Balance Net by Category
+        table_net_category = Table(title="Balance Net by Category")
+        table_net_category.add_column("Date", style="dim")
+        for col in pivot_category_net.columns:
+            table_net_category.add_column(str(col), justify="right", style="orange1")
+        table_net_category.add_column("Total", justify="right", style="bold cyan")
+        
+        for date_str in pivot_category_net.index:
+            row_values = [date_str]
+            row_total = 0
+            for col in pivot_category_net.columns:
+                val = pivot_category_net.loc[date_str, col]
+                row_values.append(f"{val:,.0f}")
+                row_total += val
+            row_values.append(f"{row_total:,.0f}")
+            table_net_category.add_row(*row_values)
+        
+        # Display: CAD tables on top, Net tables on bottom
         self.app.console.clear()
-        columns = Columns([table1, table2], equal=True, expand=True)
-        self.app.console.print(columns)
+        cad_columns = Columns([table_cad_account, table_cad_category], equal=True, expand=True)
+        net_columns = Columns([table_net_account, table_net_category], equal=True, expand=True)
+        self.app.console.print(cad_columns)
+        self.app.console.print()
+        self.app.console.print(net_columns)
         
         self.app.skip_render = True
         self.output_content = ""

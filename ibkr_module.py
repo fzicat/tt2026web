@@ -279,6 +279,8 @@ class IBKRModule(Module):
             self.list_all_positions(order_by='value', ascending=False)
         elif cmd in ['ls', 'list symbol']:
             self.list_all_positions(order_by='symbol', ascending=True)
+        elif cmd in ['lq', 'list quantity']:
+            self.list_all_positions(order_by='s_qty', ascending=False)
         elif cmd.startswith('e ') or cmd.startswith('edit '):
             parts = command.split()
             if len(parts) >= 2:
@@ -583,11 +585,13 @@ class IBKRModule(Module):
             table.add_column("O/C", justify="center")
             table.add_column("PnL", justify="right", style="bold red")
             table.add_column("Rem Qty", justify="right", style="blue")
+            table.add_column("Delta", justify="right", style="yellow")
+            table.add_column("Und Price", justify="right", style="yellow")
 
             for _, row in self.trades_df.iterrows():
                 pnl = row.get('realized_pnl', 0.0)
                 rem_qty = row.get('remaining_qty', 0.0)
-                
+
                 table.add_row(
                     str(row['dateTime']),
                     str(row['symbol']),
@@ -597,7 +601,9 @@ class IBKRModule(Module):
                     f"{row['ibCommission']:.2f}" if pd.notnull(row['ibCommission']) else "",
                     str(row['openCloseIndicator']),
                     f"{pnl:.2f}" if pnl != 0 else "",
-                    f"{rem_qty:.0f}" if rem_qty != 0 else ""
+                    f"{rem_qty:.0f}" if rem_qty != 0 else "",
+                    f"{row.get('delta', 0.0):.4f}" if pd.notnull(row.get('delta')) else "",
+                    f"{row.get('und_price', 0.0):.2f}" if pd.notnull(row.get('und_price')) else ""
                 )
 
             # Direct print to allow terminal scrolling
@@ -791,6 +797,8 @@ class IBKRModule(Module):
                 data_rows.sort(key=lambda x: x['mtm'], reverse=not ascending)
             elif order_by == 'symbol':
                 data_rows.sort(key=lambda x: x['symbol'], reverse=not ascending)
+            elif order_by == 's_qty':
+                data_rows.sort(key=lambda x: x['s_qty'], reverse=not ascending)
 
             # Calculate totals
             total_value = sum(row['value'] for row in data_rows)
