@@ -1,7 +1,9 @@
 import sqlite3
 import pandas as pd
+import os
+from shared.config import DB_PATH
 
-DB_NAME = "ibkr.db"
+DB_NAME = os.path.join(DB_PATH, "ibkr.db")
 
 def get_connection():
     return sqlite3.connect(DB_NAME)

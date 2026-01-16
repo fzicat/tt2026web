@@ -245,7 +245,7 @@ class IBKRModule(Module):
         - T   | trades     > List all trades
         - R   | reload     > Reload trades from DB
         - P x | p <sym>    > List positions for a symbol
-        - D   | debug      > Debug (print trades_df)
+        - DEB | debug      > Debug (print trades_df)
         - H   | help       > Show this message
         - Q   | quit       > Return to main menu
         - QQ  | quit quit  > Exit the application'''
@@ -255,7 +255,7 @@ class IBKRModule(Module):
             self.stats_daily()
         elif cmd in ['sw', 'stats week']:
             self.stats_weekly()
-        elif cmd in ['d', 'debug']:
+        elif cmd in ['deb', 'debug']:
             self.debug()
         elif cmd in ['t', 'trades']:
             self.list_all_trades()

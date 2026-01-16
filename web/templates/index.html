@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TradeTools</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <header>
+        <h1>TradeTools</h1>
+        <nav>
+            <a href="#" onclick="showHome()" class="nav-link">HOME</a>
+            <a href="#" onclick="showIBKR()" class="nav-link active">IBKR</a>
+            <a href="#" class="nav-link disabled">FBN</a>
+            <a href="#" class="nav-link disabled">EQUITY</a>
+        </nav>
+    </header>
+
+    <main>
+        <!-- Home View -->
+        <section id="home-view" class="view">
+            <div class="menu-box">
+                <h2>TradeTools v3 Web</h2>
+                <p>Select a module:</p>
+                <div class="menu-items">
+                    <a href="#" onclick="showIBKR()" class="menu-item">[I] IBKR</a>
+                    <span class="menu-item disabled">[F] FBN (coming soon)</span>
+                    <span class="menu-item disabled">[E] EQUITY (coming soon)</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- IBKR View -->
+        <section id="ibkr-view" class="view hidden">
+            <div class="toolbar">
+                <button onclick="loadPositions()">Positions</button>
+                <button onclick="loadTrades()">All Trades</button>
+                <button onclick="loadDailyStats()">Daily Stats</button>
+                <button onclick="loadWeeklyStats()">Weekly Stats</button>
+                <span class="separator">|</span>
+                <button onclick="importTrades('daily')" class="action-btn">Import Daily</button>
+                <button onclick="importTrades('weekly')" class="action-btn">Import Weekly</button>
+                <button onclick="updateMTM()" class="action-btn">Update MTM</button>
+            </div>
+
+            <div id="ibkr-content">
+                <!-- Dynamic content loaded here -->
+            </div>
+        </section>
+
+        <!-- Position Detail Modal -->
+        <div id="position-modal" class="modal hidden">
+            <div class="modal-content">
+                <span class="close-btn" onclick="closeModal()">&times;</span>
+                <div id="position-detail-content"></div>
+            </div>
+        </div>
+
+        <!-- Edit Trade Modal -->
+        <div id="edit-modal" class="modal hidden">
+            <div class="modal-content small">
+                <span class="close-btn" onclick="closeEditModal()">&times;</span>
+                <h3>Edit Trade</h3>
+                <form id="edit-form" onsubmit="submitTradeEdit(event)">
+                    <input type="hidden" id="edit-trade-id">
+                    <div class="form-row">
+                        <label>Delta:</label>
+                        <input type="number" id="edit-delta" step="0.0001">
+                    </div>
+                    <div class="form-row">
+                        <label>Und Price:</label>
+                        <input type="number" id="edit-und-price" step="0.01">
+                    </div>
+                    <button type="submit">Save</button>
+                </form>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <span id="status">Ready</span>
+    </footer>
+
+    <!-- Toast notifications -->
+    <div id="toast-container"></div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
