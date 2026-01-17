@@ -180,6 +180,21 @@ th {
     font-weight: bold;
     position: sticky;
     top: 0;
+    text-align: right;
+}
+
+th:first-child {
+    text-align: left;
+}
+
+th.sortable {
+    cursor: pointer;
+    user-select: none;
+}
+
+th.sortable:hover {
+    color: var(--fg0);
+    background-color: var(--bg2);
 }
 
 tr:nth-child(even) {
@@ -378,12 +393,78 @@ footer {
 
 /* Stats Table */
 .stats-table {
-    max-width: 400px;
+    max-width: 600px;
 }
 
 .stats-table td.day {
     color: var(--gray);
     width: 80px;
+}
+
+/* Matrix Table */
+.matrix-table th,
+.matrix-table td {
+    min-width: 70px;
+    font-size: 10px;
+}
+
+.matrix-table th:first-child,
+.matrix-table td:first-child {
+    min-width: 90px;
+}
+
+.matrix-table .total-col {
+    background-color: var(--bg1);
+    font-weight: bold;
+}
+
+/* Form validation */
+.form-validation {
+    background-color: var(--bg0);
+    border: 1px solid var(--bg2);
+    padding: 8px;
+    margin: 8px 0;
+    font-size: 11px;
+}
+
+.form-validation div {
+    margin: 2px 0;
+}
+
+.form-validation strong {
+    color: var(--bright-aqua);
+}
+
+/* Form select */
+.form-row select {
+    font-family: inherit;
+    font-size: 12px;
+    background-color: var(--bg0);
+    color: var(--fg);
+    border: 1px solid var(--bg2);
+    padding: 2px 4px;
+    width: 160px;
+}
+
+.form-row select:focus {
+    outline: none;
+    border-color: var(--bright-aqua);
+}
+
+/* FBN form button */
+#fbn-entry-form button {
+    font-family: inherit;
+    font-size: 11px;
+    background-color: var(--bg1);
+    color: var(--bright-aqua);
+    border: 1px solid var(--bg2);
+    padding: 4px 16px;
+    cursor: pointer;
+    margin-top: 8px;
+}
+
+#fbn-entry-form button:hover {
+    background-color: var(--bg2);
 }
 
 /* Scrollable container */

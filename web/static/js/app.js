@@ -2,6 +2,9 @@
 let currentView = 'home';
 let currentSymbol = null;
 let activeToast = null;
+let sortBy = 'mtm';
+let sortAsc = false;
+let fbnAccounts = [];
 
 // Status helpers
 function setStatus(msg, type = '') {
@@ -86,6 +89,15 @@ function showIBKR() {
     loadPositions();
 }
 
+function showFBN() {
+    document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
+    document.getElementById('fbn-view').classList.remove('hidden');
+    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+    document.querySelectorAll('.nav-link')[2].classList.add('active');
+    currentView = 'fbn';
+    loadFBNMonthlyStats();
+}
+
 // Format helpers
 function fmt(val, decimals = 2) {
     if (val === null || val === undefined || val === '') return '';
@@ -108,11 +120,26 @@ function pnlClass(val) {
 // IBKR: Load Positions
 async function loadPositions() {
     try {
-        const data = await api('/ibkr/positions');
+        const data = await api(`/ibkr/positions?sort_by=${sortBy}&ascending=${sortAsc}`);
         renderPositions(data);
     } catch (err) {
         document.getElementById('ibkr-content').innerHTML = `<p class="error">${err.message}</p>`;
     }
+}
+
+function sortPositions(column) {
+    if (sortBy === column) {
+        sortAsc = !sortAsc;
+    } else {
+        sortBy = column;
+        sortAsc = column === 'symbol';  // Default ascending for symbol, descending for others
+    }
+    loadPositions();
+}
+
+function sortIndicator(column) {
+    if (sortBy !== column) return '';
+    return sortAsc ? ' ▲' : ' ▼';
 }
 
 function renderPositions(data) {
@@ -120,13 +147,13 @@ function renderPositions(data) {
 
     let html = '<div class="table-container"><table>';
     html += `<tr>
-        <th>Symbol</th>
+        <th class="sortable" onclick="sortPositions('symbol')">Symbol${sortIndicator('symbol')}</th>
         <th>Value</th>
-        <th>MTM</th>
+        <th class="sortable" onclick="sortPositions('mtm')">MTM${sortIndicator('mtm')}</th>
         <th>MTM%</th>
         <th>Tgt%</th>
         <th>Unrlzd PnL</th>
-        <th>Stock</th>
+        <th class="sortable" onclick="sortPositions('s_qty')">Stock${sortIndicator('s_qty')}</th>
         <th>Call</th>
         <th>Put</th>
         <th>Stock PnL</th>
@@ -433,11 +460,324 @@ async function updateMTM() {
     }
 }
 
+// ============================================
+// FBN Functions
+// ============================================
+
+// FBN: Load Monthly Stats
+async function loadFBNMonthlyStats() {
+    try {
+        const data = await api('/fbn/stats/monthly');
+        renderFBNMonthlyStats(data);
+    } catch (err) {
+        document.getElementById('fbn-content').innerHTML = `<p class="error">${err.message}</p>`;
+    }
+}
+
+function renderFBNMonthlyStats(data) {
+    const { stats, totals } = data;
+
+    let html = '<div class="table-container"><table class="stats-table">';
+    html += `<tr>
+        <th>Date</th>
+        <th>Deposit</th>
+        <th>Asset</th>
+        <th>Fee</th>
+        <th>PnL</th>
+        <th>Pct</th>
+    </tr>`;
+
+    for (const s of stats) {
+        html += `<tr>
+            <td>${s.date}</td>
+            <td class="num">${s.deposit !== 0 ? fmt(s.deposit) : '-'}</td>
+            <td class="num">${fmt(s.asset)}</td>
+            <td class="num">${s.fee !== 0 ? fmt(s.fee) : '-'}</td>
+            <td class="num ${pnlClass(s.pnl)}">${fmt(s.pnl)}</td>
+            <td class="num ${pnlClass(s.pct)}">${fmt(s.pct)}%</td>
+        </tr>`;
+    }
+
+    html += `<tr class="totals">
+        <td>TOTAL</td>
+        <td class="num">${fmt(totals.deposit)}</td>
+        <td class="num">${fmt(totals.asset)}</td>
+        <td class="num">${fmt(totals.fee)}</td>
+        <td class="num ${pnlClass(totals.pnl)}">${fmt(totals.pnl)}</td>
+        <td class="num">-</td>
+    </tr>`;
+
+    html += '</table></div>';
+    document.getElementById('fbn-content').innerHTML = html;
+}
+
+// FBN: Load Yearly Stats
+async function loadFBNYearlyStats() {
+    try {
+        const data = await api('/fbn/stats/yearly');
+        renderFBNYearlyStats(data);
+    } catch (err) {
+        document.getElementById('fbn-content').innerHTML = `<p class="error">${err.message}</p>`;
+    }
+}
+
+function renderFBNYearlyStats(data) {
+    const { stats, totals } = data;
+
+    let html = '<div class="table-container"><table class="stats-table">';
+    html += `<tr>
+        <th>Year</th>
+        <th>Deposit</th>
+        <th>Asset</th>
+        <th>Fee</th>
+        <th>PnL</th>
+        <th>Pct</th>
+    </tr>`;
+
+    for (const s of stats) {
+        html += `<tr>
+            <td>${s.year}</td>
+            <td class="num">${s.deposit !== 0 ? fmt(s.deposit) : '-'}</td>
+            <td class="num">${fmt(s.asset)}</td>
+            <td class="num">${s.fee !== 0 ? fmt(s.fee) : '-'}</td>
+            <td class="num ${pnlClass(s.pnl)}">${fmt(s.pnl)}</td>
+            <td class="num ${pnlClass(s.pct)}">${fmt(s.pct)}%</td>
+        </tr>`;
+    }
+
+    html += `<tr class="totals">
+        <td>TOTAL</td>
+        <td class="num">${fmt(totals.deposit)}</td>
+        <td class="num">${fmt(totals.asset)}</td>
+        <td class="num">${fmt(totals.fee)}</td>
+        <td class="num ${pnlClass(totals.pnl)}">${fmt(totals.pnl)}</td>
+        <td class="num">-</td>
+    </tr>`;
+
+    html += '</table></div>';
+    document.getElementById('fbn-content').innerHTML = html;
+}
+
+// FBN: Load Monthly Matrix
+async function loadFBNMonthlyMatrix() {
+    try {
+        const data = await api('/fbn/matrix/monthly');
+        renderFBNMatrix(data, 'date', 'Monthly Assets Matrix');
+    } catch (err) {
+        document.getElementById('fbn-content').innerHTML = `<p class="error">${err.message}</p>`;
+    }
+}
+
+// FBN: Load Yearly Matrix
+async function loadFBNYearlyMatrix() {
+    try {
+        const data = await api('/fbn/matrix/yearly');
+        renderFBNMatrix(data, 'year', 'Yearly Assets Matrix');
+    } catch (err) {
+        document.getElementById('fbn-content').innerHTML = `<p class="error">${err.message}</p>`;
+    }
+}
+
+function renderFBNMatrix(data, rowKey, title) {
+    const { accounts, data: rows } = data;
+
+    let html = '<div class="table-container"><table class="matrix-table">';
+    html += `<tr><th>${rowKey === 'date' ? 'Date' : 'Year'}</th>`;
+    for (const acc of accounts) {
+        html += `<th>${acc}</th>`;
+    }
+    html += '<th class="total-col">Total</th></tr>';
+
+    for (const row of rows) {
+        html += `<tr><td>${row[rowKey]}</td>`;
+        for (const acc of accounts) {
+            const val = row[acc];
+            html += `<td class="num">${val !== null ? fmt(val) : '-'}</td>`;
+        }
+        html += `<td class="num total-col">${fmt(row.total)}</td></tr>`;
+    }
+
+    html += '</table></div>';
+    document.getElementById('fbn-content').innerHTML = html;
+}
+
+// FBN: Entry Modal
+async function openFBNEntryModal() {
+    // Load accounts if not already loaded
+    if (fbnAccounts.length === 0) {
+        try {
+            fbnAccounts = await api('/fbn/accounts');
+        } catch (err) {
+            showToast('Failed to load accounts', 'error');
+            return;
+        }
+    }
+
+    // Populate account dropdown
+    const select = document.getElementById('fbn-account');
+    select.innerHTML = '<option value="">Select account...</option>';
+    for (const acc of fbnAccounts) {
+        select.innerHTML += `<option value="${acc.name}" data-portfolio="${acc.portfolio}" data-currency="${acc.currency}">${acc.name} (${acc.currency})</option>`;
+    }
+
+    // Set default date to last day of previous month
+    const today = new Date();
+    const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const lastOfPrevMonth = new Date(firstOfMonth - 1);
+    document.getElementById('fbn-date').value = lastOfPrevMonth.toISOString().split('T')[0];
+
+    // Reset form
+    resetFBNForm();
+
+    document.getElementById('fbn-entry-modal').classList.remove('hidden');
+}
+
+function closeFBNEntryModal() {
+    document.getElementById('fbn-entry-modal').classList.add('hidden');
+}
+
+function resetFBNForm() {
+    document.getElementById('fbn-investment').value = 0;
+    document.getElementById('fbn-deposit').value = 0;
+    document.getElementById('fbn-interest').value = 0;
+    document.getElementById('fbn-dividend').value = 0;
+    document.getElementById('fbn-distribution').value = 0;
+    document.getElementById('fbn-tax').value = 0;
+    document.getElementById('fbn-fee').value = 0;
+    document.getElementById('fbn-other').value = 0;
+    document.getElementById('fbn-cash').value = 0;
+    document.getElementById('fbn-asset').value = 0;
+    document.getElementById('fbn-rate').value = 1;
+    document.getElementById('fbn-rate-row').style.display = 'none';
+    document.getElementById('fbn-validation').innerHTML = '';
+}
+
+async function onFBNAccountChange() {
+    const select = document.getElementById('fbn-account');
+    const selectedOption = select.options[select.selectedIndex];
+    const currency = selectedOption.dataset.currency;
+    const date = document.getElementById('fbn-date').value;
+    const account = select.value;
+
+    // Show/hide rate field based on currency
+    document.getElementById('fbn-rate-row').style.display = currency === 'USD' ? 'flex' : 'none';
+
+    // Load existing entry if available
+    if (date && account) {
+        try {
+            const entry = await api(`/fbn/entry/${date}/${encodeURIComponent(account)}`);
+            if (entry) {
+                document.getElementById('fbn-investment').value = entry.investment || 0;
+                document.getElementById('fbn-deposit').value = entry.deposit || 0;
+                document.getElementById('fbn-interest').value = entry.interest || 0;
+                document.getElementById('fbn-dividend').value = entry.dividend || 0;
+                document.getElementById('fbn-distribution').value = entry.distribution || 0;
+                document.getElementById('fbn-tax').value = entry.tax || 0;
+                document.getElementById('fbn-fee').value = entry.fee || 0;
+                document.getElementById('fbn-other').value = entry.other || 0;
+                document.getElementById('fbn-cash').value = entry.cash || 0;
+                document.getElementById('fbn-asset').value = entry.asset || 0;
+                document.getElementById('fbn-rate').value = entry.rate || 1;
+            } else {
+                resetFBNForm();
+                // Keep rate field visibility
+                document.getElementById('fbn-rate-row').style.display = currency === 'USD' ? 'flex' : 'none';
+            }
+        } catch (err) {
+            // Entry doesn't exist, reset form
+            resetFBNForm();
+            document.getElementById('fbn-rate-row').style.display = currency === 'USD' ? 'flex' : 'none';
+        }
+    }
+
+    updateFBNValidation();
+}
+
+function updateFBNValidation() {
+    const investment = parseFloat(document.getElementById('fbn-investment').value) || 0;
+    const deposit = parseFloat(document.getElementById('fbn-deposit').value) || 0;
+    const interest = parseFloat(document.getElementById('fbn-interest').value) || 0;
+    const dividend = parseFloat(document.getElementById('fbn-dividend').value) || 0;
+    const distribution = parseFloat(document.getElementById('fbn-distribution').value) || 0;
+    const tax = parseFloat(document.getElementById('fbn-tax').value) || 0;
+    const fee = parseFloat(document.getElementById('fbn-fee').value) || 0;
+    const other = parseFloat(document.getElementById('fbn-other').value) || 0;
+    const cash = parseFloat(document.getElementById('fbn-cash').value) || 0;
+    const asset = parseFloat(document.getElementById('fbn-asset').value) || 0;
+
+    const variationEncaisse = investment + deposit + interest + dividend + distribution + tax + fee + other;
+    const totalPlacements = asset - cash;
+
+    document.getElementById('fbn-validation').innerHTML = `
+        <div>Variation Encaisse: <strong>${fmt(variationEncaisse)}</strong></div>
+        <div>Total Placements: <strong>${fmt(totalPlacements)}</strong></div>
+    `;
+}
+
+async function submitFBNEntry(event) {
+    event.preventDefault();
+
+    const select = document.getElementById('fbn-account');
+    const selectedOption = select.options[select.selectedIndex];
+
+    const entry = {
+        date: document.getElementById('fbn-date').value,
+        account: select.value,
+        portfolio: selectedOption.dataset.portfolio,
+        currency: selectedOption.dataset.currency,
+        investment: parseFloat(document.getElementById('fbn-investment').value) || 0,
+        deposit: parseFloat(document.getElementById('fbn-deposit').value) || 0,
+        interest: parseFloat(document.getElementById('fbn-interest').value) || 0,
+        dividend: parseFloat(document.getElementById('fbn-dividend').value) || 0,
+        distribution: parseFloat(document.getElementById('fbn-distribution').value) || 0,
+        tax: parseFloat(document.getElementById('fbn-tax').value) || 0,
+        fee: parseFloat(document.getElementById('fbn-fee').value) || 0,
+        other: parseFloat(document.getElementById('fbn-other').value) || 0,
+        cash: parseFloat(document.getElementById('fbn-cash').value) || 0,
+        asset: parseFloat(document.getElementById('fbn-asset').value) || 0,
+        rate: parseFloat(document.getElementById('fbn-rate').value) || 1
+    };
+
+    try {
+        await api('/fbn/entry', {
+            method: 'POST',
+            body: JSON.stringify(entry)
+        });
+        showToast(`Entry saved for ${entry.account}`, 'success');
+        closeFBNEntryModal();
+        // Reload current view
+        if (currentView === 'fbn') {
+            loadFBNMonthlyStats();
+        }
+    } catch (err) {
+        showToast(err.message || 'Failed to save entry', 'error');
+    }
+}
+
+// Add validation listeners to FBN form fields
+document.addEventListener('DOMContentLoaded', () => {
+    const fbnFields = ['fbn-investment', 'fbn-deposit', 'fbn-interest', 'fbn-dividend',
+                       'fbn-distribution', 'fbn-tax', 'fbn-fee', 'fbn-other', 'fbn-cash', 'fbn-asset'];
+    fbnFields.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('input', updateFBNValidation);
+        }
+    });
+
+    // Also trigger account change when date changes
+    const dateEl = document.getElementById('fbn-date');
+    if (dateEl) {
+        dateEl.addEventListener('change', onFBNAccountChange);
+    }
+});
+
 // Close modals on escape
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
         closeModal();
         closeEditModal();
+        closeFBNEntryModal();
     }
 });
 

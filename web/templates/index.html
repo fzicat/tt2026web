@@ -12,7 +12,7 @@
         <nav>
             <a href="#" onclick="showHome()" class="nav-link">HOME</a>
             <a href="#" onclick="showIBKR()" class="nav-link active">IBKR</a>
-            <a href="#" class="nav-link disabled">FBN</a>
+            <a href="#" onclick="showFBN()" class="nav-link">FBN</a>
             <a href="#" class="nav-link disabled">EQUITY</a>
         </nav>
     </header>
@@ -25,7 +25,7 @@
                 <p>Select a module:</p>
                 <div class="menu-items">
                     <a href="#" onclick="showIBKR()" class="menu-item">[I] IBKR</a>
-                    <span class="menu-item disabled">[F] FBN (coming soon)</span>
+                    <a href="#" onclick="showFBN()" class="menu-item">[F] FBN</a>
                     <span class="menu-item disabled">[E] EQUITY (coming soon)</span>
                 </div>
             </div>
@@ -48,6 +48,88 @@
                 <!-- Dynamic content loaded here -->
             </div>
         </section>
+
+        <!-- FBN View -->
+        <section id="fbn-view" class="view hidden">
+            <div class="toolbar">
+                <button onclick="loadFBNMonthlyStats()">Monthly Stats</button>
+                <button onclick="loadFBNYearlyStats()">Yearly Stats</button>
+                <button onclick="loadFBNMonthlyMatrix()">Monthly Assets</button>
+                <button onclick="loadFBNYearlyMatrix()">Yearly Assets</button>
+                <span class="separator">|</span>
+                <button onclick="openFBNEntryModal()" class="action-btn">Add/Edit Entry</button>
+            </div>
+
+            <div id="fbn-content">
+                <!-- Dynamic content loaded here -->
+            </div>
+        </section>
+
+        <!-- FBN Entry Modal -->
+        <div id="fbn-entry-modal" class="modal hidden">
+            <div class="modal-content">
+                <span class="close-btn" onclick="closeFBNEntryModal()">&times;</span>
+                <h3>Add/Edit FBN Entry</h3>
+                <form id="fbn-entry-form" onsubmit="submitFBNEntry(event)">
+                    <div class="form-row">
+                        <label>Date:</label>
+                        <input type="date" id="fbn-date" required>
+                    </div>
+                    <div class="form-row">
+                        <label>Account:</label>
+                        <select id="fbn-account" required onchange="onFBNAccountChange()">
+                            <option value="">Select account...</option>
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label>Investment:</label>
+                        <input type="number" id="fbn-investment" step="0.01" value="0">
+                    </div>
+                    <div class="form-row">
+                        <label>Deposit:</label>
+                        <input type="number" id="fbn-deposit" step="0.01" value="0">
+                    </div>
+                    <div class="form-row">
+                        <label>Interest:</label>
+                        <input type="number" id="fbn-interest" step="0.01" value="0">
+                    </div>
+                    <div class="form-row">
+                        <label>Dividend:</label>
+                        <input type="number" id="fbn-dividend" step="0.01" value="0">
+                    </div>
+                    <div class="form-row">
+                        <label>Distribution:</label>
+                        <input type="number" id="fbn-distribution" step="0.01" value="0">
+                    </div>
+                    <div class="form-row">
+                        <label>Tax:</label>
+                        <input type="number" id="fbn-tax" step="0.01" value="0">
+                    </div>
+                    <div class="form-row">
+                        <label>Fee:</label>
+                        <input type="number" id="fbn-fee" step="0.01" value="0">
+                    </div>
+                    <div class="form-row">
+                        <label>Other:</label>
+                        <input type="number" id="fbn-other" step="0.01" value="0">
+                    </div>
+                    <div class="form-row">
+                        <label>Cash:</label>
+                        <input type="number" id="fbn-cash" step="0.01" value="0">
+                    </div>
+                    <div class="form-row">
+                        <label>Asset:</label>
+                        <input type="number" id="fbn-asset" step="0.01" value="0">
+                    </div>
+                    <div class="form-row" id="fbn-rate-row" style="display: none;">
+                        <label>Rate (USD/CAD):</label>
+                        <input type="number" id="fbn-rate" step="0.0001" value="1">
+                    </div>
+                    <div class="form-validation" id="fbn-validation"></div>
+                    <button type="submit">Save Entry</button>
+                </form>
+            </div>
+        </div>
 
         <!-- Position Detail Modal -->
         <div id="position-modal" class="modal hidden">
