@@ -1,1 +1,1 @@
-python main.py
+python .\cli\main.py

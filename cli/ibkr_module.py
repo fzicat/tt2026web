@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 from rich.table import Table
 from rich.console import Group
 from rich.panel import Panel
-import config
+from shared import config
 import ibkr_db_handler
 from base_module import Module
 

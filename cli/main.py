@@ -1,3 +1,9 @@
+import sys
+import os
+
+# Add parent directory to path for shared module access
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from rich.console import Console
 from rich.layout import Layout
 from rich.panel import Panel
