@@ -7,7 +7,7 @@ from rich.table import Table
 from rich.console import Group
 from rich.panel import Panel
 from shared import config
-import ibkr_db_handler
+from shared.db import ibkr_db
 from base_module import Module
 
 class IBKRModule(Module):
@@ -48,7 +48,7 @@ class IBKRModule(Module):
         self.load_trades()
 
     def load_trades(self):
-        self.trades_df = ibkr_db_handler.fetch_all_trades_as_df()
+        self.trades_df = ibkr_db.fetch_all_trades_as_df()
         if not self.trades_df.empty:
             # Filter out USD.CAD
             self.trades_df = self.trades_df[self.trades_df['symbol'] != 'USD.CAD']
@@ -62,7 +62,7 @@ class IBKRModule(Module):
             # MTM Logic
             self.trades_df['mtm_price'] = 0.0
             
-            market_prices = ibkr_db_handler.fetch_latest_market_prices()
+            market_prices = ibkr_db.fetch_latest_market_prices()
             
             # Map prices for non-option trades
             mask = ~self.trades_df['putCall'].isin(['C', 'P'])
@@ -209,7 +209,7 @@ class IBKRModule(Module):
                         
                     if price is not None:
                         self.app.console.print(f"[debug]Price for {sym}: {price}[/]")
-                        ibkr_db_handler.save_market_price(sym, float(price), current_time)
+                        ibkr_db.save_market_price(sym, float(price), current_time)
                         count += 1
                     else:
                         self.app.console.print(f"[warn]No price found for {sym}[/]")
@@ -393,7 +393,7 @@ class IBKRModule(Module):
                     'openCloseIndicator': open_close
                 }
                 
-                if ibkr_db_handler.save_trade(row):
+                if ibkr_db.save_trade(row):
                     count_new += 1
             
             
@@ -537,7 +537,7 @@ class IBKRModule(Module):
                 updates['und_price'] = float(und_price_str)
                 
             if updates:
-                if ibkr_db_handler.update_trade_fields(trade_id, updates):
+                if ibkr_db.update_trade_fields(trade_id, updates):
                     self.app.console.print("[info]Trade updated successfully.[/]")
                     self.load_trades() # Reload DF
                     if self.current_symbol:

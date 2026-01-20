@@ -3,7 +3,14 @@ import requests
 import time
 import xml.etree.ElementTree as ET
 import math
-from web.db import get_ibkr_connection, dict_factory
+import sys
+import os
+
+# Add project root to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
+from shared.db import ibkr_db
+from shared.config import IBKR_TOKEN, QUERY_ID_DAILY, QUERY_ID_WEEKLY
 
 
 def clean_nan(obj):
@@ -16,6 +23,7 @@ def clean_nan(obj):
         return None
     return obj
 
+
 # Target percentages for portfolio allocation
 TARGET_PERCENT = {
     'GOOGL': 10.0, 'NVDA': 10.0, 'TSLA': 10.0,
@@ -25,72 +33,33 @@ TARGET_PERCENT = {
     'AVGO': 2.0, 'GLW': 2.0, 'INTC': 2.0, 'META': 2.0, 'SOFI': 2.0,
 }
 
-# IBKR Flex Query config (imported from shared)
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from shared.config import IBKR_TOKEN, QUERY_ID_DAILY, QUERY_ID_WEEKLY
-
 
 def fetch_all_trades():
     """Fetch all trades from database"""
-    conn = get_ibkr_connection()
-    conn.row_factory = dict_factory
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM trades ORDER BY dateTime")
-    rows = cursor.fetchall()
-    conn.close()
-    return rows
+    df = ibkr_db.fetch_all_trades_as_df()
+    if df.empty:
+        return []
+    return df.to_dict(orient='records')
 
 
 def fetch_market_prices():
     """Fetch latest market prices"""
-    conn = get_ibkr_connection()
-    conn.row_factory = dict_factory
-    cursor = conn.cursor()
-    cursor.execute("SELECT symbol, price FROM market_price")
-    rows = cursor.fetchall()
-    conn.close()
-    return {row['symbol']: row['price'] for row in rows}
+    return ibkr_db.fetch_latest_market_prices()
 
 
 def save_market_price(symbol, price, date_time):
     """Save market price to database"""
-    conn = get_ibkr_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT OR REPLACE INTO market_price (symbol, price, dateTime) VALUES (?, ?, ?)",
-        (symbol, price, date_time)
-    )
-    conn.commit()
-    conn.close()
+    return ibkr_db.save_market_price(symbol, price, date_time)
 
 
 def save_trade(trade_data):
     """Save a trade to database, ignore if exists"""
-    conn = get_ibkr_connection()
-    cursor = conn.cursor()
-    columns = ', '.join(trade_data.keys())
-    placeholders = ', '.join(['?'] * len(trade_data))
-    sql = f"INSERT OR IGNORE INTO trades ({columns}) VALUES ({placeholders})"
-    cursor.execute(sql, list(trade_data.values()))
-    conn.commit()
-    inserted = cursor.rowcount > 0
-    conn.close()
-    return inserted
+    return ibkr_db.save_trade(trade_data)
 
 
 def update_trade(trade_id, updates):
     """Update specific fields for a trade"""
-    conn = get_ibkr_connection()
-    cursor = conn.cursor()
-    set_clause = ', '.join([f"{k} = ?" for k in updates.keys()])
-    values = list(updates.values()) + [trade_id]
-    cursor.execute(f"UPDATE trades SET {set_clause} WHERE tradeID = ?", values)
-    conn.commit()
-    updated = cursor.rowcount > 0
-    conn.close()
-    return updated
+    return ibkr_db.update_trade_fields(trade_id, updates)
 
 
 def calculate_pnl(trades_df):

@@ -3,3 +3,5 @@ config.py
 bak/
 __pycache__/
 *.pyc
+.env
+.vercel

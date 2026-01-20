@@ -2,7 +2,7 @@
 // Authentication
 // ============================================
 
-let supabaseClient = null;
+let supabase = null;
 let accessToken = null;
 
 // Initialize Supabase client
@@ -15,16 +15,16 @@ function initSupabase() {
         return false;
     }
 
-    supabaseClient = window.supabase.createClient(url, key);
+    supabase = window.supabase.createClient(url, key);
     return true;
 }
 
 // Check if user is already logged in
 async function checkAuth() {
-    if (!supabaseClient) return false;
+    if (!supabase) return false;
 
     try {
-        const { data: { session } } = await supabaseClient.auth.getSession();
+        const { data: { session } } = await supabase.auth.getSession();
         if (session) {
             accessToken = session.access_token;
             return true;
@@ -49,7 +49,7 @@ async function handleLogin(event) {
     loginBtn.textContent = 'Logging in...';
 
     try {
-        const { data, error } = await supabaseClient.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
             email,
             password
         });
@@ -69,8 +69,8 @@ async function handleLogin(event) {
 
 // Handle logout
 async function handleLogout() {
-    if (supabaseClient) {
-        await supabaseClient.auth.signOut();
+    if (supabase) {
+        await supabase.auth.signOut();
     }
     accessToken = null;
     showLogin();

@@ -2,7 +2,7 @@ import pandas as pd
 from rich.table import Table
 from rich.columns import Columns
 from base_module import Module
-import equity_db_handler
+from shared.db import equity_db
 from datetime import datetime
 
 class EquityModule(Module):
@@ -15,7 +15,7 @@ class EquityModule(Module):
         self.load_equity_data()
 
     def load_equity_data(self):
-        self.equity_df = equity_db_handler.fetch_equity_data()
+        self.equity_df = equity_db.fetch_equity_data()
         if not self.equity_df.empty:
             self.equity_df['date'] = pd.to_datetime(self.equity_df['date'])
             # Calculated columns
@@ -163,7 +163,7 @@ class EquityModule(Module):
                 'tax': tax_val
             }
             
-            if equity_db_handler.save_equity_entry(entry):
+            if equity_db.save_equity_entry(entry):
                 self.app.console.print("[success]Entry added![/]")
             else:
                 self.app.console.print("[error]Failed to add entry.[/]")
@@ -425,7 +425,7 @@ class EquityModule(Module):
                 'tax': float(tax_val)
             }
             
-            if equity_db_handler.update_equity_entry(entry_id, entry):
+            if equity_db.update_equity_entry(entry_id, entry):
                 self.app.console.print("[success]Entry updated![/]")
                 self.load_equity_data()
                 self.output_content = "Data updated."
@@ -507,7 +507,7 @@ class EquityModule(Module):
         confirm = self.app.console.input("\nConfirm copy? (y/n) >> ").lower()
         
         if confirm == 'y':
-            if equity_db_handler.save_equity_entries(new_entries):
+            if equity_db.save_equity_entries(new_entries):
                 self.app.console.print(f"[success]{len(new_entries)} entries copied![/]")
                 self.load_equity_data()
                 self.output_content = f"Copied {len(new_entries)} entries to {target_date}."
@@ -671,7 +671,7 @@ class EquityModule(Module):
         confirm = self.app.console.input("\n[bold red]Confirm DELETE?[/] (y/n) >> ").lower()
         
         if confirm == 'y':
-            if equity_db_handler.delete_equity_entry(entry_id):
+            if equity_db.delete_equity_entry(entry_id):
                 self.app.console.print("[success]Entry deleted![/]")
                 self.load_equity_data()
                 self.output_content = "Entry deleted."

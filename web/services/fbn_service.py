@@ -1,6 +1,12 @@
 import pandas as pd
 import math
-from web.db import get_fbn_connection, dict_factory
+import sys
+import os
+
+# Add project root to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
+from shared.db import fbn_db
 
 
 def clean_nan(obj):
@@ -30,22 +36,15 @@ ACCOUNTS = [
 
 def fetch_fbn_data():
     """Fetch all FBN data from database"""
-    conn = get_fbn_connection()
-    conn.row_factory = dict_factory
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM fbn ORDER BY date, account")
-    rows = cursor.fetchall()
-    conn.close()
-    return rows
+    return fbn_db.fetch_fbn_data()
 
 
 def get_fbn_dataframe():
     """Get FBN data as DataFrame with currency conversion applied"""
-    rows = fetch_fbn_data()
-    if not rows:
+    df = fetch_fbn_data()
+    if df.empty:
         return pd.DataFrame()
 
-    df = pd.DataFrame(rows)
     df['date'] = pd.to_datetime(df['date'])
 
     # Apply currency conversion (USD -> CAD)
@@ -258,36 +257,20 @@ def get_accounts():
 
 def get_entry(date: str, account: str):
     """Get a specific entry by date and account"""
-    conn = get_fbn_connection()
-    conn.row_factory = dict_factory
-    cursor = conn.cursor()
-    cursor.execute(
-        "SELECT * FROM fbn WHERE date = ? AND account = ?",
-        (date, account)
-    )
-    row = cursor.fetchone()
-    conn.close()
-    return row
+    df = fetch_fbn_data()
+    if df.empty:
+        return None
+
+    # Filter by date and account
+    mask = (df['date'].astype(str) == date) & (df['account'] == account)
+    filtered = df[mask]
+
+    if filtered.empty:
+        return None
+
+    return filtered.iloc[0].to_dict()
 
 
 def save_entry(entry: dict):
     """Save an account entry (upsert)"""
-    conn = get_fbn_connection()
-    cursor = conn.cursor()
-
-    # Delete existing entry if any
-    cursor.execute(
-        "DELETE FROM fbn WHERE date = ? AND account = ?",
-        (entry['date'], entry['account'])
-    )
-
-    # Insert new entry
-    columns = ', '.join(entry.keys())
-    placeholders = ', '.join(['?'] * len(entry))
-    sql = f"INSERT INTO fbn ({columns}) VALUES ({placeholders})"
-
-    cursor.execute(sql, list(entry.values()))
-    conn.commit()
-    conn.close()
-
-    return True
+    return fbn_db.save_account_entry(entry)

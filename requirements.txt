@@ -4,3 +4,6 @@ requests
 fastapi
 uvicorn[standard]
 pydantic
+python-dotenv
+supabase>=2.0.0
+jinja2

@@ -192,11 +192,25 @@
     <!-- Toast notifications -->
     <div id="toast-container"></div>
 
-    <!-- Supabase config (will be replaced by Vercel env vars or loaded from backend) -->
+    <!-- Supabase config loaded from /api/config endpoint or window globals -->
     <script>
-        // These will be injected by the server or set as environment variables
-        window.SUPABASE_URL = '{{ supabase_url }}';
-        window.SUPABASE_ANON_KEY = '{{ supabase_anon_key }}';
+        // For Vercel deployment, these will be set via environment variables
+        // The config endpoint will provide them at runtime
+        window.SUPABASE_URL = '';
+        window.SUPABASE_ANON_KEY = '';
+
+        // Fetch config from API endpoint
+        fetch('/api/config')
+            .then(r => r.json())
+            .then(config => {
+                window.SUPABASE_URL = config.supabase_url;
+                window.SUPABASE_ANON_KEY = config.supabase_anon_key;
+                // Re-initialize after config is loaded
+                if (typeof initSupabase === 'function') {
+                    document.dispatchEvent(new Event('configLoaded'));
+                }
+            })
+            .catch(err => console.error('Failed to load config:', err));
     </script>
     <script src="/static/js/app.js"></script>
 </body>

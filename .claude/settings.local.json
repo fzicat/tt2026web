@@ -3,7 +3,10 @@
     "allow": [
       "Bash(pip install:*)",
       "Bash(python -c:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(grep:*)",
+      "Bash(copy:*)",
+      "Bash(copy \"D:\\\\dev\\\\tt2026web\\\\web\\\\static\\\\js\\\\app.js\" \"D:\\\\dev\\\\tt2026web\\\\public\\\\js\\\\app.js\")"
     ]
   }
 }

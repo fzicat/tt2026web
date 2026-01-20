@@ -2,7 +2,7 @@ import pandas as pd
 from rich.table import Table
 from rich.console import Group, Console
 from base_module import Module
-import fbn_db_handler
+from shared.db import fbn_db
 
 class FBNModule(Module):
     def __init__(self, app):
@@ -27,7 +27,7 @@ class FBNModule(Module):
         ]
 
     def load_fbn_data(self):
-        self.df = fbn_db_handler.fetch_fbn_data()
+        self.df = fbn_db.fetch_fbn_data()
         
         if not self.df.empty:
             # Ensure date is datetime
@@ -490,7 +490,7 @@ class FBNModule(Module):
             **values
         }
         
-        fbn_db_handler.save_account_entry(entry_data)
+        fbn_db.save_account_entry(entry_data)
         self.app.console.print(f"[success]Saved entry for {acc_name}[/]")
 
     def get_output(self):
