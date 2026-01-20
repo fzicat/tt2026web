@@ -2,7 +2,7 @@ import pandas as pd
 from rich.table import Table
 from rich.console import Group, Console
 from base_module import Module
-from shared.db import fbn_db
+from cli.db import fbn_db
 
 class FBNModule(Module):
     def __init__(self, app):

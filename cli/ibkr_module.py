@@ -7,7 +7,7 @@ from rich.table import Table
 from rich.console import Group
 from rich.panel import Panel
 from shared import config
-from shared.db import ibkr_db
+from cli.db import ibkr_db
 from base_module import Module
 
 class IBKRModule(Module):
@@ -28,16 +28,17 @@ class IBKRModule(Module):
             'COIN' : 5.0,
             'COST' : 5.0,
             'DIS' : 5.0,
+            'FCX' : 5.0,
             'GLD' : 5.0,
             'MSFT' : 5.0,
             'MSTR' : 5.0,
             'PLTR' : 5.0,
-            'AMZN' : 2.5,
-            'IBIT' : 2.5,
-            'LLY' : 2.5,
-            'MRK' : 2.5,
-            'NFLX' : 2.5,
-            'ORCL' : 2.5,
+            'AMZN' : 2.0,
+            'IBIT' : 2.0,
+            'LLY' : 2.0,
+            'MRK' : 2.0,
+            'NFLX' : 2.0,
+            'ORCL' : 2.0,
             'AVGO' : 2.0,
             'GLW' : 2.0,
             'INTC' : 2.0,

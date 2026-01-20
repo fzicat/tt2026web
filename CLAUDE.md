@@ -6,14 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **CLI App:**
 ```bash
-python main.py
+python ./cli/main.py
 ```
 
 **Web App:**
-```bash
-uvicorn web.main:app --reload
-```
-Then open http://127.0.0.1:8000
+coming soon
 
 ## Dependencies
 
@@ -22,13 +19,16 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-Required packages: `rich`, `pandas`, `requests`, `fastapi`, `uvicorn`, `pydantic`
-
-Optional: `yahooquery` for fetching market prices (IBKR MTM feature)
+Required packages: `rich`, `pandas`, `requests`, `yahooquery`, `supabase`
 
 ## Architecture
 
-TradeTools v3 is a terminal-based trading portfolio management application built with Rich for UI rendering.
+TradeTools is a trading portfolio management application.
+CLI is a terminal-based application built with Rich for UI rendering.
+Web, not yet implemented, will be a web-based application built with Next.js and React.
+Both will share the same database on Supabase.
+
+## CLI Architecture
 
 ### Core Components
 
@@ -54,28 +54,6 @@ TradeTools v3 is a terminal-based trading portfolio management application built
 
 ### Database Layer
 
-Databases are stored in `./data/` folder, shared between CLI and web apps.
-
-CLI db handlers (`*_db_handler.py`) use `shared.config.DB_PATH` for database location:
-- `ibkr_db_handler.py` -> `data/ibkr.db` (trades, market_price tables)
-- `fbn_db_handler.py` -> `data/fbn.db` (fbn table)
-- `equity_db_handler.py` -> `data/equity.db` (equity table)
-
-Pattern: `init_db()` creates tables, `fetch_*()` returns DataFrames, `save_*()` inserts/updates
-
-### Web Application (`web/`)
-
-FastAPI-based web app with vanilla HTML/CSS/JS frontend:
-- `web/main.py`: FastAPI entry point, serves static files and templates
-- `web/db.py`: Database connection layer
-- `web/routers/ibkr.py`: IBKR REST API routes
-- `web/services/ibkr_service.py`: Business logic (ports CLI's PnL calculation)
-- `web/templates/index.html`: Single-page app HTML
-- `web/static/css/style.css`: Gruvbox dark theme styling
-- `web/static/js/app.js`: Frontend JavaScript
-
-API endpoints: `/api/ibkr/positions`, `/api/ibkr/positions/{symbol}`, `/api/ibkr/trades`, `/api/ibkr/import`, `/api/ibkr/mtm`, `/api/ibkr/stats/daily`, `/api/ibkr/stats/weekly`
-
 ### IBKR Module Specifics
 
 - Imports trades via IBKR Flex Query API (XML parsing)
@@ -90,8 +68,12 @@ API endpoints: `/api/ibkr/positions`, `/api/ibkr/positions/{symbol}`, `/api/ibkr
 - Short output: Set `self.output_content` (string or Rich renderable like Table)
 - Navigation: `q` returns to parent module, `qq` exits application
 
+## Web Architecture
+
+Coming soon
+
 ## Configuration
 
 `shared/config.py` contains:
+- Supabase credentials (URL and key)
 - IBKR Flex Query credentials (token and query IDs)
-- `DB_PATH`: Path to shared database folder (`./data/`)

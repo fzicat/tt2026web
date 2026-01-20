@@ -2,7 +2,7 @@ import pandas as pd
 from rich.table import Table
 from rich.columns import Columns
 from base_module import Module
-from shared.db import equity_db
+from cli.db import equity_db
 from datetime import datetime
 
 class EquityModule(Module):

@@ -1,9 +1,6 @@
 rich
 pandas
 requests
-fastapi
-uvicorn[standard]
-pydantic
-python-dotenv
+yahooquery
 supabase>=2.0.0
-jinja2
+python-dotenv
