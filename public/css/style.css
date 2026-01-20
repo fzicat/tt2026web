@@ -565,6 +565,11 @@ footer {
     background-color: var(--bg);
 }
 
+.login-container.hidden,
+#login-view.hidden {
+    display: none !important;
+}
+
 .login-box {
     background-color: var(--bg1);
     border: 1px solid var(--gray);

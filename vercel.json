@@ -16,6 +16,10 @@
   ],
   "routes": [
     {
+      "src": "/api/config",
+      "dest": "/api/config.py"
+    },
+    {
       "src": "/api/ibkr/positions/(.*)",
       "dest": "/api/ibkr/positions.py"
     },
@@ -74,10 +78,6 @@
     {
       "src": "/api/fbn/matrix/yearly",
       "dest": "/api/fbn/matrix/yearly.py"
-    },
-    {
-      "src": "/api/config",
-      "dest": "/api/config.py"
     },
     {
       "src": "/static/(.*)",
