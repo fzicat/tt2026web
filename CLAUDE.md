@@ -16,7 +16,7 @@ coming soon
 
 Install dependencies:
 ```bash
-pip install -r requirements.txt
+pip install -r .\cli\requirements.txt
 ```
 
 Required packages: `rich`, `pandas`, `requests`, `yahooquery`, `supabase`

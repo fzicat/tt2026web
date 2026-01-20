@@ -1,0 +1,210 @@
+// IBKR Types
+export interface Trade {
+  tradeID: string;
+  accountId: string;
+  underlyingSymbol: string;
+  symbol: string;
+  description: string;
+  expiry: string | null;
+  putCall: string | null;
+  strike: number | null;
+  dateTime: string;
+  quantity: number;
+  tradePrice: number;
+  multiplier: number;
+  ibCommission: number;
+  currency: string;
+  notes: string | null;
+  openCloseIndicator: string | null;
+  delta: number | null;
+  und_price: number | null;
+  // Calculated fields
+  realized_pnl?: number;
+  remaining_qty?: number;
+  credit?: number;
+  mtm_price?: number;
+  mtm_value?: number;
+}
+
+export interface Position {
+  symbol: string;
+  underlyingSymbol: string;
+  value: number;
+  mtm: number;
+  mtmPercent: number;
+  targetPercent: number;
+  unrealizedPnl: number;
+  stockQty: number;
+  callQty: number;
+  putQty: number;
+  stockPnl: number;
+  callPnl: number;
+  putPnl: number;
+  bookPrice: number;
+}
+
+export interface PositionDetail {
+  tradeID: string;
+  dateTime: string;
+  description: string;
+  putCall: string | null;
+  quantity: number;
+  price: number;
+  commission: number;
+  openClose: string | null;
+  realizedPnl: number;
+  remainingQty: number;
+  credit: number;
+  delta: number | null;
+  undPrice: number | null;
+}
+
+export interface MarketPrice {
+  symbol: string;
+  price: number;
+  date_time: string;
+}
+
+export interface DailyStat {
+  date: string;
+  dayName: string;
+  realizedPnl: number;
+}
+
+export interface WeeklyStat {
+  weekEnding: string;
+  realizedPnl: number;
+}
+
+// FBN Types
+export interface FBNEntry {
+  id?: number;
+  date: string;
+  account: string;
+  portfolio: string;
+  currency: string;
+  investment: number;
+  deposit: number;
+  interest: number;
+  dividend: number;
+  distribution: number;
+  tax: number;
+  fee: number;
+  other: number;
+  cash: number;
+  asset: number;
+  rate: number;
+}
+
+export interface FBNMonthlyStat {
+  date: string;
+  deposit: number;
+  asset: number;
+  fee: number;
+  pnl: number;
+  pct: number;
+}
+
+export interface FBNYearlyStat {
+  year: number;
+  deposit: number;
+  asset: number;
+  fee: number;
+  pnl: number;
+  pct: number;
+}
+
+export interface FBNAccount {
+  name: string;
+  portfolio: string;
+  currency: string;
+}
+
+// Equity Types
+export interface EquityEntry {
+  id?: number;
+  date: string;
+  description: string;
+  account: string;
+  category: string;
+  currency: string;
+  rate: number;
+  balance: number;
+  tax: number;
+  // Calculated
+  balance_cad?: number;
+  balance_net?: number;
+}
+
+export interface EquitySummary {
+  name: string;
+  balanceCad: number;
+  balanceNet: number;
+}
+
+// Auth Types
+export interface User {
+  id: string;
+  email: string;
+}
+
+// App State Types
+export interface AppError {
+  message: string;
+  timestamp: number;
+}
+
+// Target percentages for IBKR allocation
+export const TARGET_PERCENT: Record<string, number> = {
+  GOOGL: 10.0,
+  NVDA: 10.0,
+  TSLA: 10.0,
+  ABBV: 5.0,
+  AMD: 5.0,
+  COIN: 5.0,
+  COST: 5.0,
+  DIS: 5.0,
+  FCX: 5.0,
+  GLD: 5.0,
+  MSFT: 5.0,
+  MSTR: 5.0,
+  PLTR: 5.0,
+  AMZN: 2.0,
+  IBIT: 2.0,
+  LLY: 2.0,
+  MRK: 2.0,
+  NFLX: 2.0,
+  ORCL: 2.0,
+  AVGO: 2.0,
+  GLW: 2.0,
+  INTC: 2.0,
+  META: 2.0,
+  SOFI: 2.0,
+};
+
+// FBN fixed accounts
+export const FBN_ACCOUNTS: FBNAccount[] = [
+  { name: "MARGE", portfolio: "Personnel", currency: "CAD" },
+  { name: "REER", portfolio: "Personnel", currency: "CAD" },
+  { name: "CRI", portfolio: "Personnel", currency: "CAD" },
+  { name: "REEE", portfolio: "Personnel", currency: "CAD" },
+  { name: "CELI", portfolio: "Personnel", currency: "CAD" },
+  { name: "MM MARGE", portfolio: "Personnel", currency: "CAD" },
+  { name: "MM CELI", portfolio: "Personnel", currency: "CAD" },
+  { name: "GFZ CAD", portfolio: "Gestion FZ", currency: "CAD" },
+  { name: "GFZ USD", portfolio: "Gestion FZ", currency: "USD" },
+];
+
+// Equity categories
+export const EQUITY_CATEGORIES = [
+  "Bitcoin",
+  "Cash",
+  "Immobilier",
+  "FBN",
+  "IBKR",
+  "BZ",
+] as const;
+
+export const EQUITY_ACCOUNTS = ["Personnel", "Gestion FZ"] as const;
+
+export const CURRENCIES = ["CAD", "USD", "SAT"] as const;

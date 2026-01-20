@@ -5,7 +5,9 @@
       "Bash(python -c:*)",
       "Bash(curl:*)",
       "Bash(grep:*)",
-      "Bash(copy:*)"
+      "Bash(copy:*)",
+      "Bash(npx create-next-app:*)",
+      "Bash(npm run build:*)"
     ]
   }
 }

@@ -1,0 +1,184 @@
+@import "tailwindcss";
+
+/* Gruvbox Dark Theme */
+:root {
+  --gruvbox-bg: #282828;
+  --gruvbox-bg-hard: #1d2021;
+  --gruvbox-bg-soft: #32302f;
+  --gruvbox-bg1: #3c3836;
+  --gruvbox-bg2: #504945;
+  --gruvbox-bg3: #665c54;
+  --gruvbox-bg4: #7c6f64;
+
+  --gruvbox-fg: #ebdbb2;
+  --gruvbox-fg0: #fbf1c7;
+  --gruvbox-fg1: #ebdbb2;
+  --gruvbox-fg2: #d5c4a1;
+  --gruvbox-fg3: #bdae93;
+  --gruvbox-fg4: #a89984;
+
+  --gruvbox-red: #fb4934;
+  --gruvbox-green: #b8bb26;
+  --gruvbox-yellow: #fabd2f;
+  --gruvbox-blue: #83a598;
+  --gruvbox-purple: #d3869b;
+  --gruvbox-aqua: #8ec07c;
+  --gruvbox-orange: #fe8019;
+  --gruvbox-gray: #928374;
+
+  --gruvbox-red-dim: #cc241d;
+  --gruvbox-green-dim: #98971a;
+  --gruvbox-yellow-dim: #d79921;
+  --gruvbox-blue-dim: #458588;
+  --gruvbox-purple-dim: #b16286;
+  --gruvbox-aqua-dim: #689d6a;
+  --gruvbox-orange-dim: #d65d0e;
+
+  --background: var(--gruvbox-bg);
+  --foreground: var(--gruvbox-fg);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  /* Gruvbox colors as Tailwind colors */
+  --color-gruvbox-bg: var(--gruvbox-bg);
+  --color-gruvbox-bg-hard: var(--gruvbox-bg-hard);
+  --color-gruvbox-bg-soft: var(--gruvbox-bg-soft);
+  --color-gruvbox-bg1: var(--gruvbox-bg1);
+  --color-gruvbox-bg2: var(--gruvbox-bg2);
+  --color-gruvbox-bg3: var(--gruvbox-bg3);
+  --color-gruvbox-bg4: var(--gruvbox-bg4);
+
+  --color-gruvbox-fg: var(--gruvbox-fg);
+  --color-gruvbox-fg0: var(--gruvbox-fg0);
+  --color-gruvbox-fg1: var(--gruvbox-fg1);
+  --color-gruvbox-fg2: var(--gruvbox-fg2);
+  --color-gruvbox-fg3: var(--gruvbox-fg3);
+  --color-gruvbox-fg4: var(--gruvbox-fg4);
+
+  --color-gruvbox-red: var(--gruvbox-red);
+  --color-gruvbox-green: var(--gruvbox-green);
+  --color-gruvbox-yellow: var(--gruvbox-yellow);
+  --color-gruvbox-blue: var(--gruvbox-blue);
+  --color-gruvbox-purple: var(--gruvbox-purple);
+  --color-gruvbox-aqua: var(--gruvbox-aqua);
+  --color-gruvbox-orange: var(--gruvbox-orange);
+  --color-gruvbox-gray: var(--gruvbox-gray);
+
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-sans);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  min-height: 100vh;
+}
+
+/* Monospace for numbers/data */
+.font-data {
+  font-family: var(--font-mono);
+}
+
+/* Custom scrollbar for Gruvbox theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--gruvbox-bg-hard);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--gruvbox-bg3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--gruvbox-bg4);
+}
+
+/* Selection color */
+::selection {
+  background: var(--gruvbox-orange);
+  color: var(--gruvbox-bg);
+}
+
+/* Focus styles */
+:focus-visible {
+  outline: 2px solid var(--gruvbox-orange);
+  outline-offset: 2px;
+}
+
+/* Table styles */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table th {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  background: var(--gruvbox-bg1);
+  border-bottom: 1px solid var(--gruvbox-bg3);
+  font-weight: 600;
+  color: var(--gruvbox-fg2);
+  font-size: 0.875rem;
+}
+
+.data-table td {
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--gruvbox-bg1);
+}
+
+.data-table tr:hover {
+  background: var(--gruvbox-bg-soft);
+}
+
+.data-table tr:nth-child(even) {
+  background: var(--gruvbox-bg-hard);
+}
+
+.data-table tr:nth-child(even):hover {
+  background: var(--gruvbox-bg-soft);
+}
+
+/* Spinner */
+.spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid var(--gruvbox-bg2);
+  border-top-color: var(--gruvbox-orange);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Keyboard shortcut styles */
+kbd {
+  display: inline-block;
+  padding: 0.15rem 0.4rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--gruvbox-fg2);
+  background: var(--gruvbox-bg1);
+  border: 1px solid var(--gruvbox-bg3);
+  border-radius: 4px;
+  box-shadow: 0 1px 0 var(--gruvbox-bg-hard);
+}

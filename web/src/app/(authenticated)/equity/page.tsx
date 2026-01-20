@@ -1,0 +1,319 @@
+"use client";
+
+import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabase";
+import { useError } from "@/lib/error-context";
+import { useKeyboard } from "@/lib/hooks/useKeyboard";
+import { EquityEntry, EquitySummary } from "@/types";
+import { Table, NumericCell } from "@/components/ui/Table";
+import { Button } from "@/components/ui/Button";
+import { Spinner } from "@/components/ui/Spinner";
+import { formatDate } from "@/lib/utils/format";
+
+export default function EquityPage() {
+  const router = useRouter();
+  const { setError } = useError();
+  const [entries, setEntries] = useState<EquityEntry[]>([]);
+  const [accountSummary, setAccountSummary] = useState<EquitySummary[]>([]);
+  const [categorySummary, setCategorySummary] = useState<EquitySummary[]>([]);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [uniqueDates, setUniqueDates] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+
+      const { data, error } = await supabase
+        .from("equity")
+        .select("*")
+        .order("date", { ascending: false });
+
+      if (error) throw error;
+
+      const rawEntries = data as EquityEntry[];
+
+      // Process entries - calculate balance_cad and balance_net
+      const processedEntries = rawEntries.map((entry) => {
+        let balanceCad = entry.balance * entry.rate;
+
+        // Special handling for SAT (Satoshis)
+        if (entry.currency === "SAT") {
+          balanceCad = balanceCad / 100_000_000;
+        }
+
+        const balanceNet = balanceCad * (1 - entry.tax);
+
+        return {
+          ...entry,
+          balance_cad: balanceCad,
+          balance_net: balanceNet,
+        };
+      });
+
+      // Sort by description
+      processedEntries.sort((a, b) =>
+        a.description.toLowerCase().localeCompare(b.description.toLowerCase())
+      );
+
+      // Get unique dates
+      const dates = [...new Set(processedEntries.map((e) => e.date))].sort(
+        (a, b) => b.localeCompare(a)
+      );
+      setUniqueDates(dates);
+
+      // Default to most recent date
+      if (dates.length > 0 && !selectedDate) {
+        setSelectedDate(dates[0]);
+      }
+
+      setEntries(processedEntries);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load data");
+    } finally {
+      setLoading(false);
+    }
+  }, [setError, selectedDate]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  // Calculate summaries when date changes
+  useEffect(() => {
+    if (!selectedDate) return;
+
+    const filtered = entries.filter((e) => e.date === selectedDate);
+
+    // By Account
+    const accountMap: Record<string, { cad: number; net: number }> = {};
+    for (const entry of filtered) {
+      if (!accountMap[entry.account]) {
+        accountMap[entry.account] = { cad: 0, net: 0 };
+      }
+      accountMap[entry.account].cad += entry.balance_cad || 0;
+      accountMap[entry.account].net += entry.balance_net || 0;
+    }
+    const accountSumm = Object.entries(accountMap)
+      .map(([name, vals]) => ({
+        name,
+        balanceCad: vals.cad,
+        balanceNet: vals.net,
+      }))
+      .sort((a, b) => b.balanceNet - a.balanceNet);
+    setAccountSummary(accountSumm);
+
+    // By Category
+    const categoryMap: Record<string, { cad: number; net: number }> = {};
+    for (const entry of filtered) {
+      if (!categoryMap[entry.category]) {
+        categoryMap[entry.category] = { cad: 0, net: 0 };
+      }
+      categoryMap[entry.category].cad += entry.balance_cad || 0;
+      categoryMap[entry.category].net += entry.balance_net || 0;
+    }
+    const categorySumm = Object.entries(categoryMap)
+      .map(([name, vals]) => ({
+        name,
+        balanceCad: vals.cad,
+        balanceNet: vals.net,
+      }))
+      .sort((a, b) => b.balanceNet - a.balanceNet);
+    setCategorySummary(categorySumm);
+  }, [selectedDate, entries]);
+
+  useKeyboard([
+    {
+      key: "a",
+      action: () => router.push("/equity/entry"),
+      description: "Add entry",
+    },
+    {
+      key: "l",
+      action: () => router.push("/equity/entries"),
+      description: "List entries",
+    },
+    {
+      key: "p",
+      action: () => router.push("/equity/pivot"),
+      description: "Pivot tables",
+    },
+  ]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Spinner size="lg" />
+      </div>
+    );
+  }
+
+  const filteredEntries = entries.filter((e) => e.date === selectedDate);
+  const totalCad = filteredEntries.reduce((sum, e) => sum + (e.balance_cad || 0), 0);
+  const totalNet = filteredEntries.reduce((sum, e) => sum + (e.balance_net || 0), 0);
+
+  const entryColumns = [
+    {
+      key: "account",
+      header: "Account",
+      className: "text-[var(--gruvbox-aqua)]",
+    },
+    {
+      key: "category",
+      header: "Category",
+      className: "text-[var(--gruvbox-purple)]",
+    },
+    { key: "description", header: "Description" },
+    { key: "currency", header: "Curr" },
+    {
+      key: "balance",
+      header: "Balance",
+      align: "right" as const,
+      render: (e: EquityEntry) => <NumericCell value={e.balance} format="currency" />,
+    },
+    {
+      key: "rate",
+      header: "Rate",
+      align: "right" as const,
+      render: (e: EquityEntry) => e.rate.toFixed(4),
+    },
+    {
+      key: "balance_cad",
+      header: "Bal CAD",
+      align: "right" as const,
+      className: "text-[var(--gruvbox-green)]",
+      render: (e: EquityEntry) => <NumericCell value={e.balance_cad} format="currency" />,
+    },
+    {
+      key: "tax",
+      header: "Tax",
+      align: "right" as const,
+      render: (e: EquityEntry) => (e.tax * 100).toFixed(0) + "%",
+    },
+    {
+      key: "balance_net",
+      header: "Bal Net",
+      align: "right" as const,
+      className: "text-[var(--gruvbox-green)] font-bold",
+      render: (e: EquityEntry) => <NumericCell value={e.balance_net} format="currency" />,
+    },
+  ];
+
+  const summaryColumns = [
+    { key: "name", header: "Name" },
+    {
+      key: "balanceCad",
+      header: "Balance CAD",
+      align: "right" as const,
+      className: "text-[var(--gruvbox-green)]",
+      render: (s: EquitySummary) => <NumericCell value={s.balanceCad} format="currency" />,
+    },
+    {
+      key: "balanceNet",
+      header: "Balance Net",
+      align: "right" as const,
+      className: "text-[var(--gruvbox-green)] font-bold",
+      render: (s: EquitySummary) => <NumericCell value={s.balanceNet} format="currency" />,
+    },
+  ];
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-xl font-semibold text-[var(--gruvbox-orange)]">
+          Equity Overview
+        </h1>
+        <div className="flex gap-2">
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={() => router.push("/equity/entry")}
+          >
+            <kbd className="mr-1.5">a</kbd> Add Entry
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => router.push("/equity/pivot")}
+          >
+            <kbd className="mr-1.5">p</kbd> Pivot Tables
+          </Button>
+        </div>
+      </div>
+
+      {/* Date Selector */}
+      <div className="mb-4">
+        <label className="block text-sm font-medium text-[var(--gruvbox-fg3)] mb-2">
+          Select Date
+        </label>
+        <div className="flex flex-wrap gap-2">
+          {uniqueDates.slice(0, 10).map((date) => (
+            <button
+              key={date}
+              onClick={() => setSelectedDate(date)}
+              className={`px-3 py-1 rounded text-sm ${
+                selectedDate === date
+                  ? "bg-[var(--gruvbox-orange)] text-[var(--gruvbox-bg)]"
+                  : "bg-[var(--gruvbox-bg1)] text-[var(--gruvbox-fg3)] hover:bg-[var(--gruvbox-bg2)]"
+              }`}
+            >
+              {formatDate(date)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Entries Table */}
+      <div className="mb-6">
+        <h2 className="text-lg font-semibold text-[var(--gruvbox-yellow)] mb-2">
+          Entries for {formatDate(selectedDate || "")}
+        </h2>
+        <Table
+          data={filteredEntries}
+          columns={entryColumns}
+          keyExtractor={(e) => e.id?.toString() || e.description}
+          emptyMessage="No entries for this date"
+        />
+        <div className="mt-2 p-2 bg-[var(--gruvbox-bg1)] rounded border border-[var(--gruvbox-bg3)] flex justify-end gap-8 font-data text-sm">
+          <div>
+            <span className="text-[var(--gruvbox-fg4)]">Total CAD:</span>{" "}
+            <span className="text-[var(--gruvbox-green)]">
+              {totalCad.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+            </span>
+          </div>
+          <div>
+            <span className="text-[var(--gruvbox-fg4)]">Total Net:</span>{" "}
+            <span className="text-[var(--gruvbox-green)] font-bold">
+              {totalNet.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Summaries */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <h2 className="text-lg font-semibold text-[var(--gruvbox-yellow)] mb-2">
+            By Account
+          </h2>
+          <Table
+            data={accountSummary}
+            columns={summaryColumns}
+            keyExtractor={(s) => s.name}
+          />
+        </div>
+        <div>
+          <h2 className="text-lg font-semibold text-[var(--gruvbox-yellow)] mb-2">
+            By Category
+          </h2>
+          <Table
+            data={categorySummary}
+            columns={summaryColumns}
+            keyExtractor={(s) => s.name}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
