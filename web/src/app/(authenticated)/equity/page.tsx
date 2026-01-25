@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useError } from "@/lib/error-context";
-import { useKeyboard } from "@/lib/hooks/useKeyboard";
 import { EquityEntry, EquitySummary } from "@/types";
 import { Table, NumericCell } from "@/components/ui/Table";
 import { Button } from "@/components/ui/Button";
@@ -123,24 +122,6 @@ export default function EquityPage() {
     setCategorySummary(categorySumm);
   }, [selectedDate, entries]);
 
-  useKeyboard([
-    {
-      key: "a",
-      action: () => router.push("/equity/entry"),
-      description: "Add entry",
-    },
-    {
-      key: "l",
-      action: () => router.push("/equity/entries"),
-      description: "List entries",
-    },
-    {
-      key: "p",
-      action: () => router.push("/equity/pivot"),
-      description: "Pivot tables",
-    },
-  ]);
-
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -230,14 +211,14 @@ export default function EquityPage() {
             size="sm"
             onClick={() => router.push("/equity/entry")}
           >
-            <kbd className="mr-1.5">a</kbd> Add Entry
+            Add Entry
           </Button>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => router.push("/equity/pivot")}
           >
-            <kbd className="mr-1.5">p</kbd> Pivot Tables
+            Pivot Tables
           </Button>
         </div>
       </div>
@@ -252,11 +233,10 @@ export default function EquityPage() {
             <button
               key={date}
               onClick={() => setSelectedDate(date)}
-              className={`px-3 py-1 rounded text-sm ${
-                selectedDate === date
+              className={`px-3 py-1 rounded text-sm ${selectedDate === date
                   ? "bg-[var(--gruvbox-orange)] text-[var(--gruvbox-bg)]"
                   : "bg-[var(--gruvbox-bg1)] text-[var(--gruvbox-fg3)] hover:bg-[var(--gruvbox-bg2)]"
-              }`}
+                }`}
             >
               {formatDate(date)}
             </button>

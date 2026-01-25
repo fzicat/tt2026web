@@ -14,7 +14,6 @@ interface TableProps<T> {
   data: T[];
   columns: Column<T>[];
   title?: string;
-  selectedIndex?: number;
   onRowClick?: (item: T, index: number) => void;
   keyExtractor?: (item: T, index: number) => string;
   emptyMessage?: string;
@@ -24,7 +23,6 @@ export function Table<T>({
   data,
   columns,
   title,
-  selectedIndex,
   onRowClick,
   keyExtractor,
   emptyMessage = "No data available",
@@ -75,10 +73,7 @@ export function Table<T>({
               <tr
                 key={getKey(item, index)}
                 onClick={() => onRowClick?.(item, index)}
-                className={`
-                  ${onRowClick ? "cursor-pointer" : ""}
-                  ${selectedIndex === index ? "!bg-[var(--gruvbox-bg2)] ring-1 ring-[var(--gruvbox-orange)]" : ""}
-                `}
+                className={onRowClick ? "cursor-pointer" : ""}
               >
                 {columns.map((col) => (
                   <td

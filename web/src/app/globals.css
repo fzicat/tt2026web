@@ -170,15 +170,4 @@ body {
   }
 }
 
-/* Keyboard shortcut styles */
-kbd {
-  display: inline-block;
-  padding: 0.15rem 0.4rem;
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: var(--gruvbox-fg2);
-  background: var(--gruvbox-bg1);
-  border: 1px solid var(--gruvbox-bg3);
-  border-radius: 4px;
-  box-shadow: 0 1px 0 var(--gruvbox-bg-hard);
-}
+

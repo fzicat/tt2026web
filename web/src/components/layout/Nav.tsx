@@ -5,9 +5,9 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 
 const navItems = [
-  { href: "/ibkr", label: "IBKR", key: "1" },
-  { href: "/fbn", label: "FBN", key: "2" },
-  { href: "/equity", label: "Equity", key: "3" },
+  { href: "/ibkr", label: "IBKR" },
+  { href: "/fbn", label: "FBN" },
+  { href: "/equity", label: "Equity" },
 ];
 
 export function Nav() {
@@ -34,23 +34,18 @@ export function Nav() {
                 href={item.href}
                 className={`
                   px-3 py-1.5 rounded text-sm font-medium transition-colors
-                  ${
-                    isActive(item.href)
-                      ? "bg-[var(--gruvbox-bg2)] text-[var(--gruvbox-orange)]"
-                      : "text-[var(--gruvbox-fg3)] hover:text-[var(--gruvbox-fg)] hover:bg-[var(--gruvbox-bg1)]"
+                  ${isActive(item.href)
+                    ? "bg-[var(--gruvbox-bg2)] text-[var(--gruvbox-orange)]"
+                    : "text-[var(--gruvbox-fg3)] hover:text-[var(--gruvbox-fg)] hover:bg-[var(--gruvbox-bg1)]"
                   }
                 `}
               >
-                <kbd className="mr-1.5 text-xs opacity-60">{item.key}</kbd>
                 {item.label}
               </Link>
             ))}
           </div>
 
           <div className="flex items-center gap-4">
-            <span className="text-[var(--gruvbox-fg4)] text-sm">
-              <kbd className="mr-1">?</kbd> Help
-            </span>
             <button
               onClick={() => signOut()}
               className="text-[var(--gruvbox-fg4)] text-sm hover:text-[var(--gruvbox-red)] transition-colors"

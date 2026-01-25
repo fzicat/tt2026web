@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useError } from "@/lib/error-context";
-import { useKeyboard } from "@/lib/hooks/useKeyboard";
 import { FBNEntry, FBNMonthlyStat } from "@/types";
 import { Table, NumericCell } from "@/components/ui/Table";
 import { Button } from "@/components/ui/Button";
@@ -83,24 +82,6 @@ export default function FBNPage() {
     loadData();
   }, [loadData]);
 
-  useKeyboard([
-    {
-      key: "a",
-      action: () => router.push("/fbn/entry"),
-      description: "Add entry",
-    },
-    {
-      key: "y",
-      action: () => router.push("/fbn/yearly"),
-      description: "Yearly stats",
-    },
-    {
-      key: "m",
-      action: () => router.push("/fbn/assets/monthly"),
-      description: "Monthly assets",
-    },
-  ]);
-
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -171,21 +152,21 @@ export default function FBNPage() {
             size="sm"
             onClick={() => router.push("/fbn/entry")}
           >
-            <kbd className="mr-1.5">a</kbd> Add Entry
+            Add Entry
           </Button>
           <Button
             variant="secondary"
             size="sm"
             onClick={() => router.push("/fbn/yearly")}
           >
-            <kbd className="mr-1.5">y</kbd> Yearly
+            Yearly
           </Button>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => router.push("/fbn/assets/monthly")}
           >
-            <kbd className="mr-1.5">m</kbd> Assets Matrix
+            Assets Matrix
           </Button>
         </div>
       </div>

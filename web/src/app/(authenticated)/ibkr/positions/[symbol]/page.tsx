@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, use } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, toCamelCaseArray } from "@/lib/supabase";
 import { useError } from "@/lib/error-context";
-import { useKeyboard } from "@/lib/hooks/useKeyboard";
 import { Trade } from "@/types";
 import { calculatePnL, calculateCredit, applyMtmPrices } from "@/lib/utils/fifo";
 import { Table, NumericCell } from "@/components/ui/Table";
@@ -135,16 +134,6 @@ export default function PositionDetailPage({
     loadData();
   }, [loadData]);
 
-  const { showHelp, setShowHelp, bindings } = useKeyboard([
-    {
-      key: "e",
-      action: () => {
-        // Would open edit modal in full implementation
-      },
-      description: "Edit selected trade",
-    },
-  ]);
-
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -237,7 +226,7 @@ export default function PositionDetailPage({
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="sm" onClick={() => router.back()}>
-            <kbd className="mr-1.5">q</kbd> Back
+            Back
           </Button>
           <h1 className="text-xl font-semibold text-[var(--gruvbox-orange)]">
             Position: {symbol}

@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, toCamelCaseArray } from "@/lib/supabase";
 import { useError } from "@/lib/error-context";
-import { useKeyboard, useListNavigation } from "@/lib/hooks/useKeyboard";
 import { Trade, Position } from "@/types";
 import {
   calculatePnL,
@@ -16,7 +15,6 @@ import {
 import { Table, NumericCell } from "@/components/ui/Table";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
-import { KeyboardHelp } from "@/components/layout/KeyboardHelp";
 
 export default function IBKRPage() {
   const router = useRouter();
@@ -111,45 +109,6 @@ export default function IBKRPage() {
       setUpdatingMtm(false);
     }
   };
-
-  const { selectedIndex, bindings: listBindings } = useListNavigation(
-    positions,
-    (position) => router.push(`/ibkr/positions/${position.symbol}`)
-  );
-
-  const { showHelp, setShowHelp, bindings } = useKeyboard([
-    ...listBindings,
-    {
-      key: "i",
-      action: handleImport,
-      description: "Import trades",
-    },
-    {
-      key: "m",
-      action: handleUpdateMtm,
-      description: "Update MTM prices",
-    },
-    {
-      key: "l",
-      action: () => router.push("/ibkr/positions"),
-      description: "List all positions",
-    },
-    {
-      key: "t",
-      action: () => router.push("/ibkr/trades"),
-      description: "View all trades",
-    },
-    {
-      key: "s",
-      action: () => router.push("/ibkr/stats/daily"),
-      description: "Daily stats",
-    },
-    {
-      key: "w",
-      action: () => router.push("/ibkr/stats/weekly"),
-      description: "Weekly stats",
-    },
-  ]);
 
   if (loading) {
     return (
@@ -265,7 +224,7 @@ export default function IBKRPage() {
             onClick={handleImport}
             loading={importing}
           >
-            <kbd className="mr-1.5">i</kbd> Import
+            Import
           </Button>
           <Button
             variant="secondary"
@@ -273,21 +232,21 @@ export default function IBKRPage() {
             onClick={handleUpdateMtm}
             loading={updatingMtm}
           >
-            <kbd className="mr-1.5">m</kbd> Update MTM
+            Update MTM
           </Button>
           <Button
-            variant="ghost"
+            variant="secondary"
             size="sm"
             onClick={() => router.push("/ibkr/trades")}
           >
-            <kbd className="mr-1.5">t</kbd> Trades
+            Trades
           </Button>
           <Button
-            variant="ghost"
+            variant="secondary"
             size="sm"
             onClick={() => router.push("/ibkr/stats/daily")}
           >
-            <kbd className="mr-1.5">s</kbd> Stats
+            Stats
           </Button>
         </div>
       </div>
@@ -295,7 +254,6 @@ export default function IBKRPage() {
       <Table
         data={positions}
         columns={columns}
-        selectedIndex={selectedIndex}
         onRowClick={(position) =>
           router.push(`/ibkr/positions/${position.symbol}`)
         }
@@ -354,10 +312,6 @@ export default function IBKRPage() {
             </div>
           </div>
         </div>
-      )}
-
-      {showHelp && (
-        <KeyboardHelp bindings={bindings} onClose={() => setShowHelp(false)} />
       )}
     </div>
   );

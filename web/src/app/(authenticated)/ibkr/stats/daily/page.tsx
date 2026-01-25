@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, toCamelCaseArray } from "@/lib/supabase";
 import { useError } from "@/lib/error-context";
-import { useKeyboard } from "@/lib/hooks/useKeyboard";
 import { Trade, DailyStat } from "@/types";
 import { calculatePnL } from "@/lib/utils/fifo";
 import { Table, NumericCell } from "@/components/ui/Table";
@@ -92,14 +91,6 @@ export default function DailyStatsPage() {
     loadData();
   }, [loadData]);
 
-  useKeyboard([
-    {
-      key: "w",
-      action: () => router.push("/ibkr/stats/weekly"),
-      description: "Weekly stats",
-    },
-  ]);
-
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -135,7 +126,7 @@ export default function DailyStatsPage() {
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="sm" onClick={() => router.back()}>
-            <kbd className="mr-1.5">q</kbd> Back
+            Back
           </Button>
           <h1 className="text-xl font-semibold text-[var(--gruvbox-orange)]">
             Daily Stats
@@ -146,7 +137,7 @@ export default function DailyStatsPage() {
           size="sm"
           onClick={() => router.push("/ibkr/stats/weekly")}
         >
-          <kbd className="mr-1.5">w</kbd> Weekly
+          Weekly
         </Button>
       </div>
 
@@ -161,11 +152,10 @@ export default function DailyStatsPage() {
         <div className="flex justify-between items-center font-data">
           <span className="text-[var(--gruvbox-fg4)] font-semibold">TOTAL</span>
           <span
-            className={`text-lg font-bold ${
-              totalPnl >= 0
+            className={`text-lg font-bold ${totalPnl >= 0
                 ? "text-[var(--gruvbox-blue)]"
                 : "text-[var(--gruvbox-orange)]"
-            }`}
+              }`}
           >
             {totalPnl.toLocaleString("en-US", {
               minimumFractionDigits: 2,

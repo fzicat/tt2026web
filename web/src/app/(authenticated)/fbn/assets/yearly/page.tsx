@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useError } from "@/lib/error-context";
-import { useKeyboard } from "@/lib/hooks/useKeyboard";
 import { FBNEntry, FBN_ACCOUNTS } from "@/types";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
@@ -90,14 +89,6 @@ export default function FBNYearlyAssetsPage() {
     loadData();
   }, [loadData]);
 
-  useKeyboard([
-    {
-      key: "m",
-      action: () => router.push("/fbn/assets/monthly"),
-      description: "Monthly assets",
-    },
-  ]);
-
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -111,7 +102,7 @@ export default function FBNYearlyAssetsPage() {
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="sm" onClick={() => router.back()}>
-            <kbd className="mr-1.5">q</kbd> Back
+            Back
           </Button>
           <h1 className="text-xl font-semibold text-[var(--gruvbox-orange)]">
             FBN Yearly Assets Matrix
@@ -122,7 +113,7 @@ export default function FBNYearlyAssetsPage() {
           size="sm"
           onClick={() => router.push("/fbn/assets/monthly")}
         >
-          <kbd className="mr-1.5">m</kbd> Monthly
+          Monthly
         </Button>
       </div>
 

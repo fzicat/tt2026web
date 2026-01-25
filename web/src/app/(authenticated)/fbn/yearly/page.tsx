@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useError } from "@/lib/error-context";
-import { useKeyboard } from "@/lib/hooks/useKeyboard";
 import { FBNEntry, FBNYearlyStat } from "@/types";
 import { Table, NumericCell } from "@/components/ui/Table";
 import { Button } from "@/components/ui/Button";
@@ -97,19 +96,6 @@ export default function FBNYearlyPage() {
     loadData();
   }, [loadData]);
 
-  useKeyboard([
-    {
-      key: "m",
-      action: () => router.push("/fbn"),
-      description: "Monthly stats",
-    },
-    {
-      key: "a",
-      action: () => router.push("/fbn/assets/yearly"),
-      description: "Yearly assets",
-    },
-  ]);
-
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -173,7 +159,7 @@ export default function FBNYearlyPage() {
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="sm" onClick={() => router.back()}>
-            <kbd className="mr-1.5">q</kbd> Back
+            Back
           </Button>
           <h1 className="text-xl font-semibold text-[var(--gruvbox-orange)]">
             FBN Yearly Stats
@@ -185,14 +171,14 @@ export default function FBNYearlyPage() {
             size="sm"
             onClick={() => router.push("/fbn")}
           >
-            <kbd className="mr-1.5">m</kbd> Monthly
+            Monthly
           </Button>
           <Button
             variant="ghost"
             size="sm"
             onClick={() => router.push("/fbn/assets/yearly")}
           >
-            <kbd className="mr-1.5">a</kbd> Assets Matrix
+            Assets Matrix
           </Button>
         </div>
       </div>

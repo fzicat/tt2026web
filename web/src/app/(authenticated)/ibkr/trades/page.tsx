@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, toCamelCaseArray } from "@/lib/supabase";
 import { useError } from "@/lib/error-context";
-import { useKeyboard } from "@/lib/hooks/useKeyboard";
 import { Trade } from "@/types";
 import { calculatePnL, calculateCredit, applyMtmPrices } from "@/lib/utils/fifo";
 import { Table, NumericCell } from "@/components/ui/Table";
@@ -67,8 +66,6 @@ export default function TradesPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
-
-  useKeyboard([]);
 
   if (loading) {
     return (
@@ -153,7 +150,7 @@ export default function TradesPage() {
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="sm" onClick={() => router.back()}>
-            <kbd className="mr-1.5">q</kbd> Back
+            Back
           </Button>
           <h1 className="text-xl font-semibold text-[var(--gruvbox-orange)]">
             All Trades
