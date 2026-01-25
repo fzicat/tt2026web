@@ -128,7 +128,6 @@ body {
 }
 
 .data-table th {
-  text-align: left;
   padding: 0.5rem 0.75rem;
   background: var(--gruvbox-bg1);
   border-bottom: 1px solid var(--gruvbox-bg3);
@@ -169,5 +168,3 @@ body {
     transform: rotate(360deg);
   }
 }
-
-
