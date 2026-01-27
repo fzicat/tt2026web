@@ -745,15 +745,15 @@ class IBKRModule(Module):
             groups = self.trades_df.groupby('underlyingSymbol')
             
             table = Table(title="All Positions", expand=False, row_styles=["", "on #1d2021"])
-            table.add_column("Symbol", style="bold yellow")
-            table.add_column("Value", justify="right", style="magenta")
-            table.add_column("MTM", justify="right", style="blue")
-            table.add_column("MTM %", justify="right", style="blue")
-            table.add_column("Tgt %", justify="right", style="cyan")
+            table.add_column("Symbol", style="neutral_yellow")
+            table.add_column("Value", justify="right", style="neutral_yellow")
+            table.add_column("MTM", justify="right", style="neutral_blue")
+            table.add_column("MTM %", justify="right", style="neutral_blue")
+            table.add_column("Tgt %", justify="right", style="neutral_aqua")
             table.add_column("Unrlzd PnL", justify="right")
-            table.add_column("Stock", justify="right", style="magenta")
-            table.add_column("Call", justify="right", style="magenta")
-            table.add_column("Put", justify="right", style="magenta")
+            table.add_column("Stock", justify="right", style="neutral_purple")
+            table.add_column("Call", justify="right", style="neutral_purple")
+            table.add_column("Put", justify="right", style="neutral_purple")
             table.add_column("Stock Rlzd PnL", justify="right")
             table.add_column("Call Rlzd PnL", justify="right")
             table.add_column("Put Rlzd PnL", justify="right")
@@ -818,8 +818,8 @@ class IBKRModule(Module):
 
             def fmt_pnl(val):
                 if val == 0: return ""
-                if val > 0: return f"[blue]{val:,.2f}[/blue]"
-                return f"[orange1]{val:,.2f}[/orange1]"
+                if val > 0: return f"[neutral_blue]{val:,.2f}[/neutral_blue]"
+                return f"[bright_red]{val:,.2f}[/bright_red]"
 
             for row in data_rows:
                 table.add_row(
