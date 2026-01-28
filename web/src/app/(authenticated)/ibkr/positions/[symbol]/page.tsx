@@ -142,84 +142,135 @@ export default function PositionDetailPage({
     );
   }
 
-  const columns = [
-    {
-      key: "dateTime",
-      header: "Date",
-      className: "text-[var(--gruvbox-aqua)]",
-      render: (t: Trade) => formatDateTime(t.dateTime),
-    },
-    { key: "description", header: "Description" },
-    {
-      key: "putCall",
-      header: "P/C",
-      align: "center" as const,
-      render: (t: Trade) => t.putCall || "-",
-    },
-    {
-      key: "quantity",
-      header: "Qty",
-      align: "right" as const,
-      className: "text-[var(--gruvbox-purple)]",
-      render: (t: Trade) => <NumericCell value={t.quantity} />,
-    },
-    {
-      key: "tradePrice",
-      header: "Price",
-      align: "right" as const,
-      className: "text-[var(--gruvbox-green)]",
-      render: (t: Trade) => <NumericCell value={t.tradePrice} format="currency" />,
-    },
-    {
-      key: "ibCommission",
-      header: "Comm",
-      align: "right" as const,
-      render: (t: Trade) => <NumericCell value={t.ibCommission} format="currency" />,
-    },
-    {
-      key: "openCloseIndicator",
-      header: "O/C",
-      align: "center" as const,
-      render: (t: Trade) => t.openCloseIndicator || "-",
-    },
-    {
-      key: "realized_pnl",
-      header: "Realized PnL",
-      align: "right" as const,
-      render: (t: Trade) => (
-        <NumericCell value={t.realized_pnl} format="currency" colorCode />
-      ),
-    },
-    {
-      key: "remaining_qty",
-      header: "Rem Qty",
-      align: "right" as const,
-      className: "text-[var(--gruvbox-blue)]",
-      render: (t: Trade) => <NumericCell value={t.remaining_qty} />,
-    },
-    {
-      key: "credit",
-      header: "Credit",
-      align: "right" as const,
-      className: "text-[var(--gruvbox-blue)]",
-      render: (t: Trade) => <NumericCell value={t.credit} format="currency" />,
-    },
-    {
-      key: "delta",
-      header: "Delta",
-      align: "right" as const,
-      className: "text-[var(--gruvbox-yellow)]",
-      render: (t: Trade) =>
-        t.delta ? t.delta.toFixed(4) : "-",
-    },
-    {
-      key: "und_price",
-      header: "Und Price",
-      align: "right" as const,
-      className: "text-[var(--gruvbox-yellow)]",
-      render: (t: Trade) => <NumericCell value={t.und_price} format="currency" />,
-    },
+  // Partition trades into 3 categories
+  const optionsTrades = trades.filter(
+    (t) => t.putCall === "C" || t.putCall === "P"
+  );
+  const openOptionsTrades = optionsTrades.filter(
+    (t) => t.openCloseIndicator === "O"
+  );
+  const closingOptionsTrades = optionsTrades.filter(
+    (t) => t.openCloseIndicator === "C"
+  );
+  const stockTrades = trades.filter(
+    (t) => t.putCall !== "C" && t.putCall !== "P"
+  );
+
+  // Base column definitions
+  const dateColumn = {
+    key: "dateTime",
+    header: "Date",
+    className: "text-[var(--gruvbox-aqua)]",
+    render: (t: Trade) => formatDateTime(t.dateTime),
+  };
+  const descColumn = { key: "description", header: "Description" };
+  const qtyColumn = {
+    key: "quantity",
+    header: "Qty",
+    align: "right" as const,
+    className: "text-[var(--gruvbox-purple)]",
+    render: (t: Trade) => <NumericCell value={t.quantity} />,
+  };
+  const priceColumn = {
+    key: "tradePrice",
+    header: "Price",
+    align: "right" as const,
+    className: "text-[var(--gruvbox-green)]",
+    render: (t: Trade) => <NumericCell value={t.tradePrice} format="currency" />,
+  };
+  const commColumn = {
+    key: "ibCommission",
+    header: "Comm",
+    align: "right" as const,
+    render: (t: Trade) => <NumericCell value={t.ibCommission} format="currency" />,
+  };
+  const ocColumn = {
+    key: "openCloseIndicator",
+    header: "O/C",
+    align: "center" as const,
+    render: (t: Trade) => t.openCloseIndicator || "-",
+  };
+  const pnlColumn = {
+    key: "realized_pnl",
+    header: "Realized PnL",
+    align: "right" as const,
+    render: (t: Trade) => (
+      <NumericCell value={t.realized_pnl} format="currency" colorCode />
+    ),
+  };
+  const remQtyColumn = {
+    key: "remaining_qty",
+    header: "Rem Qty",
+    align: "right" as const,
+    className: "text-[var(--gruvbox-blue)]",
+    render: (t: Trade) => <NumericCell value={t.remaining_qty} />,
+  };
+  const creditColumn = {
+    key: "credit",
+    header: "Credit",
+    align: "right" as const,
+    className: "text-[var(--gruvbox-blue)]",
+    render: (t: Trade) => <NumericCell value={t.credit} format="currency" />,
+  };
+  const deltaColumn = {
+    key: "delta",
+    header: "Delta",
+    align: "right" as const,
+    className: "text-[var(--gruvbox-yellow)]",
+    render: (t: Trade) => (t.delta ? t.delta.toFixed(4) : "-"),
+  };
+  const undPriceColumn = {
+    key: "und_price",
+    header: "Und Price",
+    align: "right" as const,
+    className: "text-[var(--gruvbox-yellow)]",
+    render: (t: Trade) => <NumericCell value={t.und_price} format="currency" />,
+  };
+
+  // Stock Trades: Date, Desc, Qty, Price, Comm, O/C, Realized PnL, Rem Qty, Credit
+  // (removed: P/C, Delta, Und Price)
+  const stockColumns = [
+    dateColumn,
+    descColumn,
+    qtyColumn,
+    priceColumn,
+    commColumn,
+    ocColumn,
+    pnlColumn,
+    remQtyColumn,
+    creditColumn,
   ];
+
+  // Closing Options: Date, Desc, Qty, Price, Comm, O/C, Realized PnL
+  // (removed: P/C, Rem Qty, Credit, Delta, Und Price)
+  const closingOptionsColumns = [
+    dateColumn,
+    descColumn,
+    qtyColumn,
+    priceColumn,
+    commColumn,
+    ocColumn,
+    pnlColumn,
+  ];
+
+  // Open Options: Date, Desc, Qty, Price, Comm, O/C, Rem Qty, Credit, Delta, Und Price
+  // (removed: P/C, Realized PnL)
+  const openOptionsColumns = [
+    dateColumn,
+    descColumn,
+    qtyColumn,
+    priceColumn,
+    commColumn,
+    ocColumn,
+    remQtyColumn,
+    creditColumn,
+    deltaColumn,
+    undPriceColumn,
+  ];
+
+  // Row class function for dimming closed positions (remaining_qty is 0, null, or undefined)
+  const getDimmedRowClass = (t: Trade) =>
+    !t.remaining_qty || t.remaining_qty === 0 ? "row-dimmed" : "";
 
   return (
     <div>
@@ -285,12 +336,53 @@ export default function PositionDetailPage({
         </div>
       )}
 
-      <Table
-        data={trades}
-        columns={columns}
-        keyExtractor={(t) => t.tradeID}
-        emptyMessage={`No trades found for ${symbol}`}
-      />
+      {/* Open Options Table */}
+      {openOptionsTrades.length > 0 && (
+        <div className="mb-6">
+          <Table
+            title={`Open Options: ${symbol}`}
+            data={openOptionsTrades}
+            columns={openOptionsColumns}
+            keyExtractor={(t) => t.tradeID}
+            rowClassName={getDimmedRowClass}
+          />
+        </div>
+      )}
+
+      {/* Closing Options Table */}
+      {closingOptionsTrades.length > 0 && (
+        <div className="mb-6">
+          <Table
+            title={`Closing Options: ${symbol}`}
+            data={closingOptionsTrades}
+            columns={closingOptionsColumns}
+            keyExtractor={(t) => t.tradeID}
+          />
+        </div>
+      )}
+
+      {/* Stock Trades Table */}
+      {stockTrades.length > 0 && (
+        <div className="mb-6">
+          <Table
+            title={`Stock Trades: ${symbol}`}
+            data={stockTrades}
+            columns={stockColumns}
+            keyExtractor={(t) => t.tradeID}
+            rowClassName={getDimmedRowClass}
+          />
+        </div>
+      )}
+
+      {/* Show message if no trades */}
+      {openOptionsTrades.length === 0 &&
+        closingOptionsTrades.length === 0 &&
+        stockTrades.length === 0 && (
+          <div className="text-center py-8 text-[var(--gruvbox-fg4)]">
+            No trades found for {symbol}
+          </div>
+        )}
     </div>
   );
 }
+

@@ -153,6 +153,12 @@ body {
   background: var(--gruvbox-bg-soft);
 }
 
+/* Dimmed row style for closed positions (remaining_qty = 0) */
+.data-table tr.row-dimmed {
+  opacity: 0.5 !important;
+  font-style: italic !important;
+}
+
 /* Spinner */
 .spinner {
   width: 24px;

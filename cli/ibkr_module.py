@@ -479,13 +479,14 @@ class IBKRModule(Module):
             self.position_map = {}
             row_idx = 1
 
-            # Helper function to create a detail table
-            def create_detail_table(title):
+            # ===== STOCK TRADES TABLE =====
+            # Columns: #, Date, Desc, Qty, Price, Comm, O/C, Realized PnL, Remaining Qty, Credit
+            # (removed: P/C, Delta, Und Price)
+            def create_stock_table(title):
                 tbl = Table(title=title, expand=True)
                 tbl.add_column("#", justify="right", style="cyan")
                 tbl.add_column("Date", style="cyan")
                 tbl.add_column("Desc")
-                tbl.add_column("P/C", justify="center")
                 tbl.add_column("Qty", justify="right", style="magenta")
                 tbl.add_column("Price", justify="right", style="green")
                 tbl.add_column("Comm", justify="right")
@@ -493,25 +494,16 @@ class IBKRModule(Module):
                 tbl.add_column("Realized PnL", justify="right")
                 tbl.add_column("Remaining Qty", justify="right", style="blue")
                 tbl.add_column("Credit", justify="right", style="blue")
-                tbl.add_column("Delta", justify="right", style="yellow")
-                tbl.add_column("Und Price", justify="right", style="yellow")
                 return tbl
 
-            # Helper function to add rows to a table
-            def add_rows_to_table(tbl, data_df, apply_dim_style=False):
+            def add_stock_rows(tbl, data_df, apply_dim_style=False):
                 nonlocal row_idx
                 for _, row in data_df.iterrows():
-                    # Format date: 2025-12-25 14:50
                     date_str = row['dateTime'].strftime('%Y-%m-%d %H:%M') if pd.notnull(row['dateTime']) else ""
-
-                    # Store mapping
                     self.position_map[row_idx] = row['tradeID']
-
-                    # Determine row style: dim if remaining_qty == 0 and apply_dim_style is True
                     rem_qty = row.get('remaining_qty', 0.0)
                     row_style = "dim italic" if apply_dim_style and rem_qty == 0 else None
-
-                    # Format realized PnL with conditional color
+                    
                     realized_pnl = row.get('realized_pnl', 0.0)
                     if realized_pnl > 0:
                         pnl_str = f"[neutral_blue]{realized_pnl:.2f}[/neutral_blue]"
@@ -524,12 +516,88 @@ class IBKRModule(Module):
                         str(row_idx),
                         date_str,
                         str(row['description']),
-                        str(row['putCall']),
                         f"{row['quantity']:.0f}" if pd.notnull(row['quantity']) else "",
                         f"{row['tradePrice']:.2f}" if pd.notnull(row['tradePrice']) else "",
                         f"{row['ibCommission']:.2f}" if pd.notnull(row['ibCommission']) else "",
                         str(row['openCloseIndicator']),
                         pnl_str,
+                        f"{rem_qty:.0f}" if rem_qty != 0 else "",
+                        f"{row.get('credit', 0.0):.2f}" if row.get('credit', 0) != 0 else "",
+                        style=row_style
+                    )
+                    row_idx += 1
+
+            # ===== CLOSING OPTIONS TABLE =====
+            # Columns: #, Date, Desc, Qty, Price, Comm, Realized PnL
+            # (removed: P/C, O/C, Rem Qty, Credit, Delta, Und Price)
+            def create_closing_options_table(title):
+                tbl = Table(title=title, expand=True)
+                tbl.add_column("#", justify="right", style="cyan")
+                tbl.add_column("Date", style="cyan")
+                tbl.add_column("Desc")
+                tbl.add_column("Qty", justify="right", style="magenta")
+                tbl.add_column("Price", justify="right", style="green")
+                tbl.add_column("Comm", justify="right")
+                tbl.add_column("Realized PnL", justify="right")
+                return tbl
+
+            def add_closing_options_rows(tbl, data_df):
+                nonlocal row_idx
+                for _, row in data_df.iterrows():
+                    date_str = row['dateTime'].strftime('%Y-%m-%d %H:%M') if pd.notnull(row['dateTime']) else ""
+                    self.position_map[row_idx] = row['tradeID']
+                    
+                    realized_pnl = row.get('realized_pnl', 0.0)
+                    if realized_pnl > 0:
+                        pnl_str = f"[neutral_blue]{realized_pnl:.2f}[/neutral_blue]"
+                    elif realized_pnl < 0:
+                        pnl_str = f"[bright_red]{realized_pnl:.2f}[/bright_red]"
+                    else:
+                        pnl_str = ""
+
+                    tbl.add_row(
+                        str(row_idx),
+                        date_str,
+                        str(row['description']),
+                        f"{row['quantity']:.0f}" if pd.notnull(row['quantity']) else "",
+                        f"{row['tradePrice']:.2f}" if pd.notnull(row['tradePrice']) else "",
+                        f"{row['ibCommission']:.2f}" if pd.notnull(row['ibCommission']) else "",
+                        pnl_str,
+                    )
+                    row_idx += 1
+
+            # ===== OPEN OPTIONS TABLE =====
+            # Columns: #, Date, Desc, Qty, Price, Comm, Remaining Qty, Credit, Delta, Und Price
+            # (removed: P/C, O/C, Realized PnL)
+            def create_open_options_table(title):
+                tbl = Table(title=title, expand=True)
+                tbl.add_column("#", justify="right", style="cyan")
+                tbl.add_column("Date", style="cyan")
+                tbl.add_column("Desc")
+                tbl.add_column("Qty", justify="right", style="magenta")
+                tbl.add_column("Price", justify="right", style="green")
+                tbl.add_column("Comm", justify="right")
+                tbl.add_column("Remaining Qty", justify="right", style="blue")
+                tbl.add_column("Credit", justify="right", style="blue")
+                tbl.add_column("Delta", justify="right", style="yellow")
+                tbl.add_column("Und Price", justify="right", style="yellow")
+                return tbl
+
+            def add_open_options_rows(tbl, data_df, apply_dim_style=False):
+                nonlocal row_idx
+                for _, row in data_df.iterrows():
+                    date_str = row['dateTime'].strftime('%Y-%m-%d %H:%M') if pd.notnull(row['dateTime']) else ""
+                    self.position_map[row_idx] = row['tradeID']
+                    rem_qty = row.get('remaining_qty', 0.0)
+                    row_style = "dim italic" if apply_dim_style and rem_qty == 0 else None
+
+                    tbl.add_row(
+                        str(row_idx),
+                        date_str,
+                        str(row['description']),
+                        f"{row['quantity']:.0f}" if pd.notnull(row['quantity']) else "",
+                        f"{row['tradePrice']:.2f}" if pd.notnull(row['tradePrice']) else "",
+                        f"{row['ibCommission']:.2f}" if pd.notnull(row['ibCommission']) else "",
                         f"{rem_qty:.0f}" if rem_qty != 0 else "",
                         f"{row.get('credit', 0.0):.2f}" if row.get('credit', 0) != 0 else "",
                         f"{row.get('delta', 0.0):.4f}" if pd.notnull(row.get('delta')) else "",
@@ -543,20 +611,20 @@ class IBKRModule(Module):
 
             # Table 1: Open Options Trades (P/C with O/C = 'O')
             if not open_options_df.empty:
-                open_options_table = create_detail_table(f"Open Options: {symbol}")
-                add_rows_to_table(open_options_table, open_options_df, apply_dim_style=True)
+                open_options_table = create_open_options_table(f"Open Options: {symbol}")
+                add_open_options_rows(open_options_table, open_options_df, apply_dim_style=True)
                 tables.append(open_options_table)
 
             # Table 2: Closing Options Trades (P/C with O/C = 'C')
             if not closing_options_df.empty:
-                closing_options_table = create_detail_table(f"Closing Options: {symbol}")
-                add_rows_to_table(closing_options_table, closing_options_df, apply_dim_style=False)
+                closing_options_table = create_closing_options_table(f"Closing Options: {symbol}")
+                add_closing_options_rows(closing_options_table, closing_options_df)
                 tables.append(closing_options_table)
 
             # Table 3: Stock Trades (not P/C)
             if not stock_df.empty:
-                stock_table = create_detail_table(f"Stock Trades: {symbol}")
-                add_rows_to_table(stock_table, stock_df, apply_dim_style=True)
+                stock_table = create_stock_table(f"Stock Trades: {symbol}")
+                add_stock_rows(stock_table, stock_df, apply_dim_style=True)
                 tables.append(stock_table)
             
             self.output_content = Group(*tables)

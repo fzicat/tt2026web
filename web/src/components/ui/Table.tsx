@@ -17,6 +17,7 @@ interface TableProps<T> {
   onRowClick?: (item: T, index: number) => void;
   keyExtractor?: (item: T, index: number) => string;
   emptyMessage?: string;
+  rowClassName?: (item: T, index: number) => string;
 }
 
 export function Table<T>({
@@ -26,6 +27,7 @@ export function Table<T>({
   onRowClick,
   keyExtractor,
   emptyMessage = "No data available",
+  rowClassName,
 }: TableProps<T>) {
   const getKey = (item: T, index: number) => {
     if (keyExtractor) return keyExtractor(item, index);
@@ -69,24 +71,31 @@ export function Table<T>({
               </td>
             </tr>
           ) : (
-            data.map((item, index) => (
-              <tr
-                key={getKey(item, index)}
-                onClick={() => onRowClick?.(item, index)}
-                className={onRowClick ? "cursor-pointer" : ""}
-              >
-                {columns.map((col) => (
-                  <td
-                    key={col.key}
-                    className={`${alignClass[col.align || "left"]} ${col.className || ""}`}
-                  >
-                    {col.render
-                      ? col.render(item, index)
-                      : String((item as Record<string, unknown>)[col.key] ?? "")}
-                  </td>
-                ))}
-              </tr>
-            ))
+            data.map((item, index) => {
+              const dynamicRowClass = rowClassName ? rowClassName(item, index) : "";
+              const classes = [
+                onRowClick ? "cursor-pointer" : "",
+                dynamicRowClass,
+              ].filter(Boolean).join(" ");
+              return (
+                <tr
+                  key={getKey(item, index)}
+                  onClick={() => onRowClick?.(item, index)}
+                  className={classes}
+                >
+                  {columns.map((col) => (
+                    <td
+                      key={col.key}
+                      className={`${alignClass[col.align || "left"]} ${col.className || ""}`}
+                    >
+                      {col.render
+                        ? col.render(item, index)
+                        : String((item as Record<string, unknown>)[col.key] ?? "")}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>
