@@ -748,7 +748,7 @@ class IBKRModule(Module):
             table.add_column("Symbol", style="neutral_yellow")
             table.add_column("Value", justify="right", style="neutral_yellow")
             table.add_column("MTM", justify="right", style="neutral_blue")
-            table.add_column("MTM %", justify="right", style="neutral_blue")
+            table.add_column("MTM %", justify="right")
             table.add_column("Tgt %", justify="right", style="neutral_aqua")
             table.add_column("Unrlzd PnL", justify="right")
             table.add_column("Stock", justify="right", style="neutral_purple")
@@ -822,11 +822,25 @@ class IBKRModule(Module):
                 return f"[bright_red]{val:,.2f}[/bright_red]"
 
             for row in data_rows:
+                # Calculate MTM % and determine color
+                mtm_pct = row['mtm'] / total_mtm * 100 if total_mtm != 0 and row['mtm'] != 0 else 0
+                target_pct = row['target_pct']
+                
+                # Determine MTM % color
+                if target_pct != 0 and (mtm_pct <= 0.6 * target_pct or mtm_pct >= 1.4 * target_pct):
+                    mtm_pct_color = "bright_red"
+                elif target_pct != 0 and (mtm_pct <= 0.8 * target_pct or mtm_pct >= 1.2 * target_pct):
+                    mtm_pct_color = "neutral_red"
+                else:
+                    mtm_pct_color = "neutral_blue"
+                
+                mtm_pct_str = f"[{mtm_pct_color}]{mtm_pct:.2f}%[/{mtm_pct_color}]" if mtm_pct != 0 else ""
+                
                 table.add_row(
                     str(row['symbol']),
                     f"{row['value']:,.2f}" if row['value'] != 0 else "",
                     f"{row['mtm']:,.2f}" if row['mtm'] != 0 else "",
-                    f"{row['mtm'] / total_mtm * 100:.2f}%" if total_mtm != 0 and row['mtm'] != 0 else "",
+                    mtm_pct_str,
                     f"{row['target_pct']:.2f}%" if row['target_pct'] != 0 else "",
                     fmt_pnl(row['unrlzd_pnl']),
                     f"{row['s_qty']:.0f}" if row['s_qty'] != 0 else "",
