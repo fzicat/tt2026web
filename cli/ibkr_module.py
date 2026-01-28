@@ -424,13 +424,18 @@ class IBKRModule(Module):
 
             # Partition DataFrames
             # stock_df: putCall is not 'C' or 'P'
-            # call_df: putCall is 'C'
-            # put_df: putCall is 'P'
+            # options_df: putCall is 'C' or 'P'
             stock_df = df[~df['putCall'].isin(['C', 'P'])]
+            options_df = df[df['putCall'].isin(['C', 'P'])]
+            
+            # Further partition options into open and closing trades
+            open_options_df = options_df[options_df['openCloseIndicator'] == 'O']
+            closing_options_df = options_df[options_df['openCloseIndicator'] == 'C']
+
+            # Calculate Summaries (using original partitions for backward compatibility)
             call_df = df[df['putCall'] == 'C']
             put_df = df[df['putCall'] == 'P']
-
-            # Calculate Summaries
+            
             stock_rem_qty_sum = stock_df['remaining_qty'].sum() if not stock_df.empty else 0.0
             call_rem_qty_sum = call_df['remaining_qty'].sum() if not call_df.empty else 0.0
             put_rem_qty_sum = put_df['remaining_qty'].sum() if not put_df.empty else 0.0
@@ -472,49 +477,89 @@ class IBKRModule(Module):
 
             self.current_symbol = symbol
             self.position_map = {}
-
-            # Detail Table (Existing)
-            table = Table(title=f"Positions: {symbol}", expand=True, row_styles=["", "on #1d2021"])
-            table.add_column("#", justify="right", style="cyan")
-            table.add_column("Date", style="cyan")
-            table.add_column("Desc")
-            table.add_column("P/C", justify="center")
-            table.add_column("Qty", justify="right", style="magenta")
-            table.add_column("Price", justify="right", style="green")
-            table.add_column("Comm", justify="right")
-            table.add_column("O/C", justify="center")
-            table.add_column("Realized PnL", justify="right", style="bold red")
-            table.add_column("Remaining Qty", justify="right", style="blue")
-            table.add_column("Credit", justify="right", style="blue")
-            table.add_column("Delta", justify="right", style="yellow")
-            table.add_column("Und Price", justify="right", style="yellow")
-
             row_idx = 1
-            for _, row in df.iterrows():
-                # Format date: 2025-12-25 14:50
-                date_str = row['dateTime'].strftime('%Y-%m-%d %H:%M') if pd.notnull(row['dateTime']) else ""
 
-                # Store mapping
-                self.position_map[row_idx] = row['tradeID']
+            # Helper function to create a detail table
+            def create_detail_table(title):
+                tbl = Table(title=title, expand=True)
+                tbl.add_column("#", justify="right", style="cyan")
+                tbl.add_column("Date", style="cyan")
+                tbl.add_column("Desc")
+                tbl.add_column("P/C", justify="center")
+                tbl.add_column("Qty", justify="right", style="magenta")
+                tbl.add_column("Price", justify="right", style="green")
+                tbl.add_column("Comm", justify="right")
+                tbl.add_column("O/C", justify="center")
+                tbl.add_column("Realized PnL", justify="right")
+                tbl.add_column("Remaining Qty", justify="right", style="blue")
+                tbl.add_column("Credit", justify="right", style="blue")
+                tbl.add_column("Delta", justify="right", style="yellow")
+                tbl.add_column("Und Price", justify="right", style="yellow")
+                return tbl
 
-                table.add_row(
-                    str(row_idx),
-                    date_str,
-                    str(row['description']),
-                    str(row['putCall']),
-                    f"{row['quantity']:.0f}" if pd.notnull(row['quantity']) else "",
-                    f"{row['tradePrice']:.2f}" if pd.notnull(row['tradePrice']) else "",
-                    f"{row['ibCommission']:.2f}" if pd.notnull(row['ibCommission']) else "",
-                    str(row['openCloseIndicator']),
-                    f"{row.get('realized_pnl', 0.0):.2f}" if row.get('realized_pnl', 0) != 0 else "",
-                    f"{row.get('remaining_qty', 0.0):.0f}" if row.get('remaining_qty', 0) != 0 else "",
-                    f"{row.get('credit', 0.0):.2f}" if row.get('credit', 0) != 0 else "",
-                    f"{row.get('delta', 0.0):.4f}" if pd.notnull(row.get('delta')) else "",
-                    f"{row.get('und_price', 0.0):.2f}" if pd.notnull(row.get('und_price')) else ""
-                )
-                row_idx += 1
+            # Helper function to add rows to a table
+            def add_rows_to_table(tbl, data_df, apply_dim_style=False):
+                nonlocal row_idx
+                for _, row in data_df.iterrows():
+                    # Format date: 2025-12-25 14:50
+                    date_str = row['dateTime'].strftime('%Y-%m-%d %H:%M') if pd.notnull(row['dateTime']) else ""
+
+                    # Store mapping
+                    self.position_map[row_idx] = row['tradeID']
+
+                    # Determine row style: dim if remaining_qty == 0 and apply_dim_style is True
+                    rem_qty = row.get('remaining_qty', 0.0)
+                    row_style = "dim italic" if apply_dim_style and rem_qty == 0 else None
+
+                    # Format realized PnL with conditional color
+                    realized_pnl = row.get('realized_pnl', 0.0)
+                    if realized_pnl > 0:
+                        pnl_str = f"[neutral_blue]{realized_pnl:.2f}[/neutral_blue]"
+                    elif realized_pnl < 0:
+                        pnl_str = f"[bright_red]{realized_pnl:.2f}[/bright_red]"
+                    else:
+                        pnl_str = ""
+
+                    tbl.add_row(
+                        str(row_idx),
+                        date_str,
+                        str(row['description']),
+                        str(row['putCall']),
+                        f"{row['quantity']:.0f}" if pd.notnull(row['quantity']) else "",
+                        f"{row['tradePrice']:.2f}" if pd.notnull(row['tradePrice']) else "",
+                        f"{row['ibCommission']:.2f}" if pd.notnull(row['ibCommission']) else "",
+                        str(row['openCloseIndicator']),
+                        pnl_str,
+                        f"{rem_qty:.0f}" if rem_qty != 0 else "",
+                        f"{row.get('credit', 0.0):.2f}" if row.get('credit', 0) != 0 else "",
+                        f"{row.get('delta', 0.0):.4f}" if pd.notnull(row.get('delta')) else "",
+                        f"{row.get('und_price', 0.0):.2f}" if pd.notnull(row.get('und_price')) else "",
+                        style=row_style
+                    )
+                    row_idx += 1
+
+            # Build the tables list
+            tables = [summary_table]
+
+            # Table 1: Open Options Trades (P/C with O/C = 'O')
+            if not open_options_df.empty:
+                open_options_table = create_detail_table(f"Open Options: {symbol}")
+                add_rows_to_table(open_options_table, open_options_df, apply_dim_style=True)
+                tables.append(open_options_table)
+
+            # Table 2: Closing Options Trades (P/C with O/C = 'C')
+            if not closing_options_df.empty:
+                closing_options_table = create_detail_table(f"Closing Options: {symbol}")
+                add_rows_to_table(closing_options_table, closing_options_df, apply_dim_style=False)
+                tables.append(closing_options_table)
+
+            # Table 3: Stock Trades (not P/C)
+            if not stock_df.empty:
+                stock_table = create_detail_table(f"Stock Trades: {symbol}")
+                add_rows_to_table(stock_table, stock_df, apply_dim_style=True)
+                tables.append(stock_table)
             
-            self.output_content = Group(summary_table, table)
+            self.output_content = Group(*tables)
         except Exception as e:
             self.output_content = f"[error]Error listing positions: {e}[/]"
 
