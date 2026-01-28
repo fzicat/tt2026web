@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, toCamelCaseArray } from "@/lib/supabase";
 import { useError } from "@/lib/error-context";
@@ -16,6 +16,8 @@ import { Table, NumericCell } from "@/components/ui/Table";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 
+type SortDirection = "asc" | "desc";
+
 export default function IBKRPage() {
   const router = useRouter();
   const { setError } = useError();
@@ -25,6 +27,8 @@ export default function IBKRPage() {
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
   const [updatingMtm, setUpdatingMtm] = useState(false);
+  const [sortKey, setSortKey] = useState<string | null>("mtm");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   const loadData = useCallback(async () => {
     try {
@@ -110,6 +114,36 @@ export default function IBKRPage() {
     }
   };
 
+  const handleSort = useCallback((key: string) => {
+    if (sortKey === key) {
+      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDirection("desc");
+    }
+  }, [sortKey]);
+
+  const sortedPositions = useMemo(() => {
+    if (!sortKey) return positions;
+    const sorted = [...positions].sort((a, b) => {
+      const aVal = (a as unknown as Record<string, unknown>)[sortKey];
+      const bVal = (b as unknown as Record<string, unknown>)[sortKey];
+
+      // Handle string comparison for symbol
+      if (typeof aVal === "string" && typeof bVal === "string") {
+        return sortDirection === "asc"
+          ? aVal.localeCompare(bVal)
+          : bVal.localeCompare(aVal);
+      }
+
+      // Handle numeric comparison
+      const aNum = typeof aVal === "number" ? aVal : 0;
+      const bNum = typeof bVal === "number" ? bVal : 0;
+      return sortDirection === "asc" ? aNum - bNum : bNum - aNum;
+    });
+    return sorted;
+  }, [positions, sortKey, sortDirection]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -119,16 +153,18 @@ export default function IBKRPage() {
   }
 
   const columns = [
-    { key: "symbol", header: "Symbol", className: "text-[var(--gruvbox-yellow)] font-semibold" },
+    { key: "symbol", header: "Symbol", sortable: true, className: "text-[var(--gruvbox-yellow)] font-semibold" },
     {
       key: "value",
       header: "Value",
+      sortable: true,
       align: "right" as const,
       render: (p: Position) => <NumericCell value={p.value} format="currency" />,
     },
     {
       key: "mtm",
       header: "MTM",
+      sortable: true,
       align: "right" as const,
       className: "text-[var(--gruvbox-blue)]",
       render: (p: Position) => <NumericCell value={p.mtm} format="currency" />,
@@ -136,12 +172,14 @@ export default function IBKRPage() {
     {
       key: "mtmPercent",
       header: "MTM %",
+      sortable: true,
       align: "right" as const,
       render: (p: Position) => <NumericCell value={p.mtmPercent} format="percent" />,
     },
     {
       key: "targetPercent",
       header: "Tgt %",
+      sortable: true,
       align: "right" as const,
       className: "text-[var(--gruvbox-aqua)]",
       render: (p: Position) => (
@@ -159,6 +197,7 @@ export default function IBKRPage() {
     {
       key: "unrealizedPnl",
       header: "Unrlzd PnL",
+      sortable: true,
       align: "right" as const,
       render: (p: Position) => (
         <NumericCell value={p.unrealizedPnl} format="currency" colorCode />
@@ -167,6 +206,7 @@ export default function IBKRPage() {
     {
       key: "stockQty",
       header: "Stock",
+      sortable: true,
       align: "right" as const,
       className: "text-[var(--gruvbox-purple)]",
       render: (p: Position) => <NumericCell value={p.stockQty} />,
@@ -174,6 +214,7 @@ export default function IBKRPage() {
     {
       key: "callQty",
       header: "Call",
+      sortable: true,
       align: "right" as const,
       className: "text-[var(--gruvbox-purple)]",
       render: (p: Position) => <NumericCell value={p.callQty} />,
@@ -181,6 +222,7 @@ export default function IBKRPage() {
     {
       key: "putQty",
       header: "Put",
+      sortable: true,
       align: "right" as const,
       className: "text-[var(--gruvbox-purple)]",
       render: (p: Position) => <NumericCell value={p.putQty} />,
@@ -188,6 +230,7 @@ export default function IBKRPage() {
     {
       key: "stockPnl",
       header: "Stk PnL",
+      sortable: true,
       align: "right" as const,
       render: (p: Position) => (
         <NumericCell value={p.stockPnl} format="currency" colorCode />
@@ -196,6 +239,7 @@ export default function IBKRPage() {
     {
       key: "callPnl",
       header: "Call PnL",
+      sortable: true,
       align: "right" as const,
       render: (p: Position) => (
         <NumericCell value={p.callPnl} format="currency" colorCode />
@@ -204,6 +248,7 @@ export default function IBKRPage() {
     {
       key: "putPnl",
       header: "Put PnL",
+      sortable: true,
       align: "right" as const,
       render: (p: Position) => (
         <NumericCell value={p.putPnl} format="currency" colorCode />
@@ -252,30 +297,25 @@ export default function IBKRPage() {
       </div>
 
       <Table
-        data={positions}
+        data={sortedPositions}
         columns={columns}
         onRowClick={(position) =>
           router.push(`/ibkr/positions/${position.symbol}`)
         }
         keyExtractor={(p) => p.symbol}
         emptyMessage="No positions found"
+        sortKey={sortKey}
+        sortDirection={sortDirection}
+        onSort={handleSort}
       />
 
       {totals && (
         <div className="mt-4 p-3 bg-[var(--gruvbox-bg1)] rounded border border-[var(--gruvbox-bg3)]">
-          <div className="grid grid-cols-4 gap-4 text-sm font-data">
+          <div className="grid grid-cols-2 gap-4 text-sm font-data">
             <div>
               <span className="text-[var(--gruvbox-fg4)]">Total Value:</span>{" "}
               <span className="text-[var(--gruvbox-fg)]">
                 {totals.totalValue.toLocaleString("en-US", {
-                  minimumFractionDigits: 2,
-                })}
-              </span>
-            </div>
-            <div>
-              <span className="text-[var(--gruvbox-fg4)]">Total MTM:</span>{" "}
-              <span className="text-[var(--gruvbox-blue)]">
-                {totals.totalMtm.toLocaleString("en-US", {
                   minimumFractionDigits: 2,
                 })}
               </span>
@@ -290,6 +330,14 @@ export default function IBKRPage() {
                 }
               >
                 {totals.totalUnrealizedPnl.toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                })}
+              </span>
+            </div>
+            <div>
+              <span className="text-[var(--gruvbox-fg4)]">Total MTM:</span>{" "}
+              <span className="text-[var(--gruvbox-blue)]">
+                {totals.totalMtm.toLocaleString("en-US", {
                   minimumFractionDigits: 2,
                 })}
               </span>

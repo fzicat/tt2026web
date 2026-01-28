@@ -7,8 +7,11 @@ interface Column<T> {
   header: string;
   align?: "left" | "center" | "right";
   className?: string;
+  sortable?: boolean;
   render?: (item: T, index: number) => ReactNode;
 }
+
+type SortDirection = "asc" | "desc";
 
 interface TableProps<T> {
   data: T[];
@@ -18,6 +21,9 @@ interface TableProps<T> {
   keyExtractor?: (item: T, index: number) => string;
   emptyMessage?: string;
   rowClassName?: (item: T, index: number) => string;
+  sortKey?: string | null;
+  sortDirection?: SortDirection;
+  onSort?: (key: string) => void;
 }
 
 export function Table<T>({
@@ -28,6 +34,9 @@ export function Table<T>({
   keyExtractor,
   emptyMessage = "No data available",
   rowClassName,
+  sortKey,
+  sortDirection,
+  onSort,
 }: TableProps<T>) {
   const getKey = (item: T, index: number) => {
     if (keyExtractor) return keyExtractor(item, index);
@@ -38,6 +47,22 @@ export function Table<T>({
     left: "text-left",
     center: "text-center",
     right: "text-right",
+  };
+
+  const handleHeaderClick = (col: Column<T>) => {
+    if (col.sortable && onSort) {
+      onSort(col.key);
+    }
+  };
+
+  const renderSortIndicator = (col: Column<T>) => {
+    if (!col.sortable) return null;
+    if (sortKey !== col.key) return null;
+    return (
+      <span className="ml-1 text-[var(--gruvbox-orange-dim)] text-xs">
+        {sortDirection === "asc" ? "↑" : "↓"}
+      </span>
+    );
   };
 
   return (
@@ -53,9 +78,11 @@ export function Table<T>({
             {columns.map((col) => (
               <th
                 key={col.key}
-                className={`${alignClass[col.align || "left"]} ${col.className || ""}`}
+                className={`${alignClass[col.align || "left"]} ${col.className || ""} ${col.sortable ? "cursor-pointer select-none hover:text-[var(--gruvbox-yellow)]" : ""}`}
+                onClick={() => handleHeaderClick(col)}
               >
                 {col.header}
+                {renderSortIndicator(col)}
               </th>
             ))}
           </tr>
