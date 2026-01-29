@@ -863,6 +863,7 @@ class IBKRModule(Module):
             table.add_column("MTM", justify="right", style="neutral_blue")
             table.add_column("MTM %", justify="right")
             table.add_column("Tgt %", justify="right", style="neutral_aqua")
+            table.add_column("Diff", justify="right", style="neutral_aqua")
             table.add_column("Unrlzd PnL", justify="right")
             table.add_column("Stock", justify="right", style="neutral_purple")
             table.add_column("Call", justify="right", style="neutral_purple")
@@ -955,6 +956,7 @@ class IBKRModule(Module):
                     f"{row['mtm']:,.2f}" if row['mtm'] != 0 else "",
                     mtm_pct_str,
                     f"{row['target_pct']:.2f}%" if row['target_pct'] != 0 else "",
+                    (lambda d: f"[neutral_blue]{d:.2f}[/neutral_blue]" if d > 1.25 else f"[bright_red]{d:.2f}[/bright_red]" if d < 0.75 else f"{d:.2f}")(mtm_pct / target_pct) if target_pct != 0 else "",
                     fmt_pnl(row['unrlzd_pnl']),
                     f"{row['s_qty']:.0f}" if row['s_qty'] != 0 else "",
                     f"{row['c_qty']:.0f}" if row['c_qty'] != 0 else "",
@@ -972,6 +974,7 @@ class IBKRModule(Module):
                 f"{total_mtm:,.2f}",
                 f"{total_mtm / total_mtm * 100:.2f}%" if total_mtm != 0 else "",
                 f"{total_target_pct:.2f}%" if total_target_pct != 0 else "",
+                "",  # Diff column - no total
                 fmt_pnl(total_unrlzd_pnl),
                 f"{total_s_qty:.0f}",
                 f"{total_c_qty:.0f}",
