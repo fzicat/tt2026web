@@ -1,4 +1,4 @@
-import { Trade, Position, TARGET_PERCENT } from "@/types";
+import { Trade, Position } from "@/types";
 
 interface InventoryItem {
   idx: number;
@@ -130,7 +130,8 @@ export function groupByUnderlying(trades: Trade[]): Record<string, Trade[]> {
 
 export function calculatePositions(
   trades: Trade[],
-  totalMtm: number
+  totalMtm: number,
+  targetPercents: Record<string, number> = {}
 ): Position[] {
   const groups = groupByUnderlying(trades);
   const positions: Position[] = [];
@@ -178,7 +179,7 @@ export function calculatePositions(
       value,
       mtm,
       mtmPercent: totalMtm !== 0 ? (mtm / totalMtm) * 100 : 0,
-      targetPercent: TARGET_PERCENT[symbol] ?? 0,
+      targetPercent: targetPercents[symbol] ?? 0,
       unrealizedPnl,
       stockQty,
       callQty,

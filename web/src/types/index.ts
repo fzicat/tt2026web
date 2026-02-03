@@ -65,6 +65,13 @@ export interface MarketPrice {
   date_time: string;
 }
 
+export interface SymbolTarget {
+  id: number;
+  symbol: string;
+  target_percent: number;
+  sector: string | null;
+}
+
 export interface DailyStat {
   date: string;
   dayName: string;
@@ -153,37 +160,6 @@ export interface AppError {
   message: string;
   timestamp: number;
 }
-
-// Target percentages for IBKR allocation
-export const TARGET_PERCENT: Record<string, number> = {
-  NVDA: 10.0,
-  GOOGL: 10.0,
-  TSLA: 10.0,
-  PLTR: 5.0,
-  CRCL: 5.0,
-  GLD: 5.0,
-  IWM: 5.0,
-  AMD: 4.0,
-  COIN: 4.0,
-  MSTR: 4.0,
-  DIS: 4.0,
-  COST: 4.0,
-  ABBV: 4.0,
-  MSFT: 3.0,
-  COPX: 3.0,
-  AVGO: 2.0,
-  INTC: 2.0,
-  GLW: 2.0,
-  IBIT: 2.0,
-  SOFI: 2.0,
-  AMZN: 2.0,
-  LLY: 2.0,
-  MRK: 2.0,
-  ORCL: 1.0,
-  META: 1.0,
-  NFLX: 1.0,
-  FCX: 1.0,
-};
 
 // FBN fixed accounts
 export const FBN_ACCOUNTS: FBNAccount[] = [

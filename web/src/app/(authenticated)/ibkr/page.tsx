@@ -49,9 +49,21 @@ export default function IBKRPage() {
 
       if (pricesError) throw pricesError;
 
+      // Fetch symbol targets
+      const { data: targetsData, error: targetsError } = await supabase
+        .from("symbol_targets")
+        .select("symbol, target_percent");
+
+      if (targetsError) throw targetsError;
+
       const marketPrices: Record<string, number> = {};
       (pricesData || []).forEach((p: { symbol: string; price: number }) => {
         marketPrices[p.symbol] = p.price;
+      });
+
+      const targetPercents: Record<string, number> = {};
+      (targetsData || []).forEach((t: { symbol: string; target_percent: number }) => {
+        targetPercents[t.symbol] = t.target_percent;
       });
 
       // Process trades
@@ -69,7 +81,7 @@ export default function IBKRPage() {
         (sum, t) => sum + (t.mtm_value ?? 0),
         0
       );
-      const positionsData = calculatePositions(processedTrades, totalMtm);
+      const positionsData = calculatePositions(processedTrades, totalMtm, targetPercents);
       // Sort by MTM descending
       positionsData.sort((a, b) => b.mtm - a.mtm);
       setPositions(positionsData);

@@ -149,3 +149,18 @@ def fetch_latest_market_prices() -> dict:
     except Exception as e:
         print(f"Error fetching market prices: {e}")
         return {}
+
+
+def fetch_symbol_targets() -> dict:
+    """
+    Retrieves all symbol targets from the database.
+    Returns a dictionary {symbol: target_percent}
+    """
+    client = get_client()
+
+    try:
+        response = client.table('symbol_targets').select('symbol, target_percent').execute()
+        return {row['symbol']: float(row['target_percent']) for row in response.data}
+    except Exception as e:
+        print(f"Error fetching symbol targets: {e}")
+        return {}
