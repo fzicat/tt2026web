@@ -857,18 +857,19 @@ class IBKRModule(Module):
             
             table = Table(title="All Positions", expand=False, row_styles=["", "on #1d2021"])
             table.add_column("Symbol", style="neutral_yellow")
-            table.add_column("Value", justify="right", style="neutral_yellow")
-            table.add_column("MTM", justify="right", style="neutral_blue")
-            table.add_column("MTM %", justify="right")
+            table.add_column("Book Value", justify="right", style="neutral_yellow")
+            table.add_column("MTM Value", justify="right", style="neutral_blue")
+            table.add_column("MTM %", justify="right", style="neutral_blue")
             table.add_column("Tgt %", justify="right", style="neutral_aqua")
+            table.add_column("Tgt S", justify="right", style="neutral_aqua")
             table.add_column("Diff", justify="right", style="light4")
             table.add_column("Unrlzd PnL", justify="right")
-            table.add_column("Stock", justify="right", style="neutral_purple")
+            table.add_column("Shares", justify="right", style="neutral_purple")
             table.add_column("Call", justify="right", style="neutral_purple")
             table.add_column("Put", justify="right", style="neutral_purple")
-            table.add_column("Stock Rlzd PnL", justify="right")
-            table.add_column("Call Rlzd PnL", justify="right")
-            table.add_column("Put Rlzd PnL", justify="right")
+            table.add_column("S Rlzd PnL", justify="right")
+            table.add_column("C Rlzd PnL", justify="right")
+            table.add_column("P Rlzd PnL", justify="right")
 
             data_rows = []
 
@@ -880,6 +881,9 @@ class IBKRModule(Module):
 
                  value = stock_df['credit'].sum() * -1
                  mtm = stock_df['mtm_value'].sum()
+                 
+                 # Get share price for target shares calculation
+                 share_price = stock_df['mtm_price'].max() if not stock_df.empty else 0.0
                  unrlzd_pnl = mtm - value
                  
                  s_qty = stock_df['remaining_qty'].sum()
@@ -903,7 +907,8 @@ class IBKRModule(Module):
                         's_pnl': s_pnl,
                         'c_pnl': c_pnl,
                         'p_pnl': p_pnl,
-                        'target_pct': self.target_percent.get(symbol, 0.0)
+                        'target_pct': self.target_percent.get(symbol, 0.0),
+                        'share_price': share_price
                      })
 
             # Sort
@@ -941,8 +946,15 @@ class IBKRModule(Module):
             for row in data_rows:
                 mtm_pct = row['mtm'] / total_mtm * 100 if total_mtm != 0 and row['mtm'] != 0 else 0
                 target_pct = row['target_pct']
+                share_price = row['share_price']
                 
-                mtm_pct_str = f"[neutral_blue]{mtm_pct:.2f}%[/neutral_blue]" if mtm_pct != 0 else ""
+                # Target Shares = (total_mtm * target_pct / 100) / share_price
+                if target_pct != 0 and share_price != 0:
+                    tgt_shares = round(total_mtm * target_pct / 100 / share_price)
+                else:
+                    tgt_shares = 0
+                
+                mtm_pct_str = f"{mtm_pct:.2f}%" if mtm_pct != 0 else ""
                 
                 table.add_row(
                     str(row['symbol']),
@@ -950,6 +962,7 @@ class IBKRModule(Module):
                     f"{row['mtm']:,.2f}" if row['mtm'] != 0 else "",
                     mtm_pct_str,
                     f"{row['target_pct']:.2f}%" if row['target_pct'] != 0 else "",
+                    f"{tgt_shares:,}" if tgt_shares != 0 else "",
                     self._fmt_diff(mtm_pct - target_pct),
                     fmt_pnl(row['unrlzd_pnl']),
                     f"{row['s_qty']:.0f}" if row['s_qty'] != 0 else "",
@@ -968,6 +981,7 @@ class IBKRModule(Module):
                 f"{total_mtm:,.2f}",
                 f"{total_mtm / total_mtm * 100:.2f}%" if total_mtm != 0 else "",
                 f"{total_target_pct:.2f}%" if total_target_pct != 0 else "",
+                "",  # Tgt S column - no total
                 "",  # Diff column - no total
                 fmt_pnl(total_unrlzd_pnl),
                 f"{total_s_qty:.0f}",
