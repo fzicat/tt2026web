@@ -217,7 +217,11 @@ class IBKRModule(Module):
         - M   | mtm        > Get Mark-to-Market Values
         - SD  | stats day  > Daily PnL Stats
         - SW  | stats week > Weekly PnL Stats
-        - L   | list       > List all positions
+        - LM  | list mtm   > List all positions (by MTM)
+        - LV  | list value  > List all positions (by Value)
+        - LS  | list symbol > List all positions (by Symbol)
+        - LQ  | list qty    > List all positions (by Quantity)
+        - LD  | list diff   > List all positions (by Diff)
         - T   | trades     > List all trades
         - R   | reload     > Reload trades from DB
         - P x | p <sym>    > List positions for a symbol
@@ -257,6 +261,8 @@ class IBKRModule(Module):
             self.list_all_positions(order_by='symbol', ascending=True)
         elif cmd in ['lq', 'list quantity']:
             self.list_all_positions(order_by='s_qty', ascending=False)
+        elif cmd in ['ld', 'list diff']:
+            self.list_all_positions(order_by='diff', ascending=True)
         elif cmd.startswith('e ') or cmd.startswith('edit '):
             parts = command.split()
             if len(parts) >= 2:
@@ -818,6 +824,26 @@ class IBKRModule(Module):
         except Exception as e:
             self.output_content = f"[error]Error calculating weekly stats: {e}[/]"
 
+    def _fmt_diff(self, diff):
+        """Format the Diff column value with color based on thresholds."""
+        if diff == 0:
+            return ""
+        if diff > 1.5:
+            color = "bright_aqua"
+        elif diff > 1.0:
+            color = "neutral_aqua"
+        elif diff > 0.5:
+            color = "faded_aqua"
+        elif diff < -1.5:
+            color = "bright_orange"
+        elif diff < -1.0:
+            color = "neutral_orange"
+        elif diff < -0.5:
+            color = "faded_orange"
+        else:
+            color = "dark4"
+        return f"[{color}]{diff:.2f}[/{color}]"
+
     def list_all_positions(self, order_by='mtm', ascending=False):
         try:
             if self.trades_df.empty:
@@ -835,7 +861,7 @@ class IBKRModule(Module):
             table.add_column("MTM", justify="right", style="neutral_blue")
             table.add_column("MTM %", justify="right")
             table.add_column("Tgt %", justify="right", style="neutral_aqua")
-            table.add_column("Diff", justify="right", style="neutral_aqua")
+            table.add_column("Diff", justify="right", style="light4")
             table.add_column("Unrlzd PnL", justify="right")
             table.add_column("Stock", justify="right", style="neutral_purple")
             table.add_column("Call", justify="right", style="neutral_purple")
@@ -890,6 +916,7 @@ class IBKRModule(Module):
             elif order_by == 's_qty':
                 data_rows.sort(key=lambda x: x['s_qty'], reverse=not ascending)
 
+
             # Calculate totals
             total_value = sum(row['value'] for row in data_rows)
             total_mtm = sum(row['mtm'] for row in data_rows)
@@ -902,25 +929,20 @@ class IBKRModule(Module):
             total_p_pnl = sum(row['p_pnl'] for row in data_rows)
             total_target_pct = sum(row['target_pct'] for row in data_rows)
 
+            # Sort by diff (needs total_mtm, so done after totals)
+            if order_by == 'diff':
+                data_rows.sort(key=lambda x: (x['mtm'] / total_mtm * 100 if total_mtm != 0 and x['mtm'] != 0 else 0) - x['target_pct'], reverse=not ascending)
+
             def fmt_pnl(val):
                 if val == 0: return ""
                 if val > 0: return f"[neutral_blue]{val:,.2f}[/neutral_blue]"
                 return f"[bright_red]{val:,.2f}[/bright_red]"
 
             for row in data_rows:
-                # Calculate MTM % and determine color
                 mtm_pct = row['mtm'] / total_mtm * 100 if total_mtm != 0 and row['mtm'] != 0 else 0
                 target_pct = row['target_pct']
                 
-                # Determine MTM % color
-                if target_pct != 0 and (mtm_pct <= 0.6 * target_pct or mtm_pct >= 1.4 * target_pct):
-                    mtm_pct_color = "bright_red"
-                elif target_pct != 0 and (mtm_pct <= 0.8 * target_pct or mtm_pct >= 1.2 * target_pct):
-                    mtm_pct_color = "neutral_red"
-                else:
-                    mtm_pct_color = "neutral_blue"
-                
-                mtm_pct_str = f"[{mtm_pct_color}]{mtm_pct:.2f}%[/{mtm_pct_color}]" if mtm_pct != 0 else ""
+                mtm_pct_str = f"[neutral_blue]{mtm_pct:.2f}%[/neutral_blue]" if mtm_pct != 0 else ""
                 
                 table.add_row(
                     str(row['symbol']),
@@ -928,7 +950,7 @@ class IBKRModule(Module):
                     f"{row['mtm']:,.2f}" if row['mtm'] != 0 else "",
                     mtm_pct_str,
                     f"{row['target_pct']:.2f}%" if row['target_pct'] != 0 else "",
-                    (lambda d: f"[neutral_blue]{d:.2f}[/neutral_blue]" if d > 1.25 else f"[bright_red]{d:.2f}[/bright_red]" if d < 0.75 else f"{d:.2f}")(mtm_pct / target_pct) if target_pct != 0 else "",
+                    self._fmt_diff(mtm_pct - target_pct),
                     fmt_pnl(row['unrlzd_pnl']),
                     f"{row['s_qty']:.0f}" if row['s_qty'] != 0 else "",
                     f"{row['c_qty']:.0f}" if row['c_qty'] != 0 else "",
