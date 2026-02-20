@@ -688,7 +688,7 @@ class IBKRModule(Module):
                 rem_qty = row.get('remaining_qty', 0.0)
 
                 table.add_row(
-                    str(row['dateTime']),
+                    pd.to_datetime(row['dateTime']).strftime('%Y-%m-%d %H:%M') if pd.notnull(row['dateTime']) else "",
                     str(row['symbol']),
                     str(row['description']),
                     f"{row['quantity']:.0f}" if pd.notnull(row['quantity']) else "",
@@ -721,7 +721,7 @@ class IBKRModule(Module):
 
             # Create a working copy
             df = self.trades_df.copy()
-            df['dateTime'] = pd.to_datetime(df['dateTime'])
+            df['dateTime'] = pd.to_datetime(df['dateTime']).dt.tz_localize(None)
             
             # Extract date (normalize to midnight)
             df['date_only'] = df['dateTime'].dt.normalize()
@@ -733,9 +733,10 @@ class IBKRModule(Module):
                  self.output_content = "[info]No realized PnL found.[/]"
                  return
 
-            # Create full date range
-            min_date = daily_stats.index.min()
+            # Create full date range starting from Monday January 5, 2026
+            start_date = pd.Timestamp('2026-01-05')
             max_date = daily_stats.index.max()
+            min_date = max(start_date, daily_stats.index.min()) if daily_stats.index.min() > start_date else start_date
             
             # Generate all calendar days to check for weekends with trades
             all_days = pd.date_range(start=min_date, end=max_date, freq='D')
@@ -755,9 +756,12 @@ class IBKRModule(Module):
             table.add_column("Realized PnL", justify="right")
 
             total_pnl = 0.0
+            weekday_count = 0
 
             for date, pnl in daily_stats.items():
                 total_pnl += pnl
+                if date.dayofweek < 5:
+                    weekday_count += 1
                 day_name = date.strftime("%A")
                 date_str = date.strftime("%Y-%m-%d")
                 
@@ -767,6 +771,11 @@ class IBKRModule(Module):
                 table.add_row(date_str, day_name, f"[{style}]{pnl_str}[/{style}]")
 
             table.add_section()
+            # Average row (over weekdays only)
+            avg_pnl = total_pnl / weekday_count if weekday_count > 0 else 0.0
+            avg_style = "blue" if avg_pnl > 0 else "orange1" if avg_pnl < 0 else "white"
+            table.add_row("AVERAGE", "", f"[{avg_style}]{avg_pnl:,.2f}[/{avg_style}]")
+            # Total row
             style = "bold blue" if total_pnl > 0 else "bold orange1" if total_pnl < 0 else "white"
             table.add_row("TOTAL", "", f"[{style}]{total_pnl:,.2f}[/{style}]", style="bold")
 
@@ -782,7 +791,7 @@ class IBKRModule(Module):
 
             # Create working copy
             df = self.trades_df.copy()
-            df['dateTime'] = pd.to_datetime(df['dateTime'])
+            df['dateTime'] = pd.to_datetime(df['dateTime']).dt.tz_localize(None)
             
             # Set index for resampling
             df.set_index('dateTime', inplace=True)
@@ -794,9 +803,15 @@ class IBKRModule(Module):
                 self.output_content = "[info]No realized PnL found.[/]"
                 return
             
-            # Note: resample automatically fills the range with bins, but if there are gaps
-            # at the beginning or end relative to a "clean" week, it handles it.
-            # It also fills gaps with 0 if we sum() on empty bins.
+            # Filter to start from the week of January 5, 2026
+            # The first W-FRI bin ending on or after Jan 5 is Jan 9, 2026 (Friday)
+            start_week = pd.Timestamp('2026-01-09')
+            weekly_stats = weekly_stats[weekly_stats.index >= start_week]
+            
+            # Fill any missing weeks in the range with 0
+            if not weekly_stats.empty:
+                full_weeks = pd.date_range(start=weekly_stats.index.min(), end=weekly_stats.index.max(), freq='W-FRI')
+                weekly_stats = weekly_stats.reindex(full_weeks, fill_value=0.0)
             
             # Prepare table
             table = Table(title="Weekly Stats (PnL - Ending Friday)", expand=False)
@@ -804,9 +819,11 @@ class IBKRModule(Module):
             table.add_column("Realized PnL", justify="right")
             
             total_pnl = 0.0
+            week_count = 0
             
             for date, pnl in weekly_stats.items():
                 total_pnl += pnl
+                week_count += 1
                 date_str = date.strftime("%Y-%m-%d")
                 
                 # Highlight if non-zero
@@ -816,6 +833,11 @@ class IBKRModule(Module):
                 table.add_row(date_str, f"[{style}]{pnl_str}[/{style}]")
                 
             table.add_section()
+            # Average row
+            avg_pnl = total_pnl / week_count if week_count > 0 else 0.0
+            avg_style = "blue" if avg_pnl > 0 else "orange1" if avg_pnl < 0 else "white"
+            table.add_row("AVERAGE", f"[{avg_style}]{avg_pnl:,.2f}[/{avg_style}]")
+            # Total row
             style = "bold blue" if total_pnl > 0 else "bold orange1" if total_pnl < 0 else "white"
             table.add_row("TOTAL", f"[{style}]{total_pnl:,.2f}[/{style}]", style="bold")
             

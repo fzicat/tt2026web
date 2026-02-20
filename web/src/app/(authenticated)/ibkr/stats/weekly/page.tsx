@@ -52,8 +52,31 @@ export default function WeeklyStatsPage() {
         weeklyMap[weekStr] += trade.realized_pnl ?? 0;
       }
 
-      // Convert to array
+      // Start from the week of January 5, 2026 (ending Friday Jan 9)
+      const startWeek = "2026-01-09";
+
+      // Get all week-ending Fridays from startWeek to the latest week
+      const allWeeks: string[] = Object.keys(weeklyMap).filter(w => w >= startWeek).sort();
+
+      // Fill missing weeks between startWeek and the latest
+      if (allWeeks.length > 0) {
+        const lastWeek = allWeeks[allWeeks.length - 1];
+        const current = new Date(startWeek);
+        const end = new Date(lastWeek);
+        const filledWeeks: string[] = [];
+        while (current <= end) {
+          filledWeeks.push(current.toISOString().split("T")[0]);
+          current.setDate(current.getDate() + 7);
+        }
+        // Merge: ensure all filledWeeks are present
+        for (const w of filledWeeks) {
+          if (!weeklyMap[w]) weeklyMap[w] = 0;
+        }
+      }
+
+      // Convert to array, filter to start from startWeek
       const result: WeeklyStat[] = Object.entries(weeklyMap)
+        .filter(([weekEnding]) => weekEnding >= startWeek)
         .map(([weekEnding, pnl]) => ({
           weekEnding,
           realizedPnl: pnl,
@@ -128,12 +151,30 @@ export default function WeeklyStatsPage() {
       />
 
       <div className="mt-4 p-3 bg-[var(--gruvbox-bg1)] rounded border border-[var(--gruvbox-bg3)]">
+        {(() => {
+          const avgPnl = stats.length > 0 ? totalPnl / stats.length : 0;
+          return (
+            <div className="flex justify-between items-center font-data mb-2">
+              <span className="text-[var(--gruvbox-fg4)]">AVERAGE</span>
+              <span
+                className={avgPnl >= 0
+                  ? "text-[var(--gruvbox-blue)]"
+                  : "text-[var(--gruvbox-orange)]"}
+              >
+                {avgPnl.toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </span>
+            </div>
+          );
+        })()}
         <div className="flex justify-between items-center font-data">
           <span className="text-[var(--gruvbox-fg4)] font-semibold">TOTAL</span>
           <span
             className={`text-lg font-bold ${totalPnl >= 0
-                ? "text-[var(--gruvbox-blue)]"
-                : "text-[var(--gruvbox-orange)]"
+              ? "text-[var(--gruvbox-blue)]"
+              : "text-[var(--gruvbox-orange)]"
               }`}
           >
             {totalPnl.toLocaleString("en-US", {

@@ -16,6 +16,7 @@ export default function DailyStatsPage() {
   const { setError } = useError();
   const [stats, setStats] = useState<DailyStat[]>([]);
   const [totalPnl, setTotalPnl] = useState(0);
+  const [weekdayCount, setWeekdayCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async () => {
@@ -50,11 +51,14 @@ export default function DailyStatsPage() {
         return;
       }
 
-      const minDate = new Date(dates[0]);
+      // Start from Monday January 5, 2026
+      const startDate = new Date("2026-01-05");
+      const minDate = dates[0] > "2026-01-05" ? new Date(dates[0]) : startDate;
       const maxDate = new Date(dates[dates.length - 1]);
 
       const result: DailyStat[] = [];
       let total = 0;
+      let wdCount = 0;
 
       const currentDate = new Date(minDate);
       while (currentDate <= maxDate) {
@@ -70,6 +74,9 @@ export default function DailyStatsPage() {
             realizedPnl: pnl,
           });
           total += pnl;
+          if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+            wdCount++;
+          }
         }
 
         currentDate.setDate(currentDate.getDate() + 1);
@@ -80,6 +87,7 @@ export default function DailyStatsPage() {
 
       setStats(result);
       setTotalPnl(total);
+      setWeekdayCount(wdCount);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");
     } finally {
@@ -149,12 +157,30 @@ export default function DailyStatsPage() {
       />
 
       <div className="mt-4 p-3 bg-[var(--gruvbox-bg1)] rounded border border-[var(--gruvbox-bg3)]">
+        {(() => {
+          const avgPnl = weekdayCount > 0 ? totalPnl / weekdayCount : 0;
+          return (
+            <div className="flex justify-between items-center font-data mb-2">
+              <span className="text-[var(--gruvbox-fg4)]">AVERAGE</span>
+              <span
+                className={avgPnl >= 0
+                  ? "text-[var(--gruvbox-blue)]"
+                  : "text-[var(--gruvbox-orange)]"}
+              >
+                {avgPnl.toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </span>
+            </div>
+          );
+        })()}
         <div className="flex justify-between items-center font-data">
           <span className="text-[var(--gruvbox-fg4)] font-semibold">TOTAL</span>
           <span
             className={`text-lg font-bold ${totalPnl >= 0
-                ? "text-[var(--gruvbox-blue)]"
-                : "text-[var(--gruvbox-orange)]"
+              ? "text-[var(--gruvbox-blue)]"
+              : "text-[var(--gruvbox-orange)]"
               }`}
           >
             {totalPnl.toLocaleString("en-US", {
