@@ -9,7 +9,7 @@ import { calculatePnL } from "@/lib/utils/fifo";
 import { Table, NumericCell } from "@/components/ui/Table";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
-import { formatDate } from "@/lib/utils/format";
+import { formatDate, parseAsNY } from "@/lib/utils/format";
 
 function getWeekEndingFriday(date: Date): Date {
   const d = new Date(date);
@@ -45,7 +45,7 @@ export default function WeeklyStatsPage() {
       // Group by week ending Friday
       const weeklyMap: Record<string, number> = {};
       for (const trade of trades) {
-        const tradeDate = new Date(trade.dateTime);
+        const tradeDate = parseAsNY(trade.dateTime);
         const weekEnding = getWeekEndingFriday(tradeDate);
         const weekStr = weekEnding.toISOString().split("T")[0];
         if (!weeklyMap[weekStr]) weeklyMap[weekStr] = 0;

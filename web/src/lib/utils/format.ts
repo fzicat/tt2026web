@@ -19,15 +19,42 @@ export function formatPercent(value: number | null | undefined): string {
   return `${value.toFixed(2)}%`;
 }
 
+/**
+ * Parse a date string treating the raw value as EST (America/New_York).
+ *
+ * IBKR trade times are in New York time but stored in a TIMESTAMPTZ column
+ * without timezone offset, so PostgreSQL treated them as UTC. Supabase then
+ * returns them with a +00:00 or Z suffix. We strip that suffix and parse
+ * the raw components as local time (user is in EST).
+ */
+export function parseAsNY(dateStr: string): Date {
+  // Strip timezone suffix — the raw digits represent EST, not UTC
+  let clean = dateStr.replace(/Z$/, "").replace(/[+-]\d{2}:\d{2}$/, "");
+
+  // Date-only strings (YYYY-MM-DD) — treat as local date at midnight
+  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) {
+    const [y, m, d] = clean.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  }
+  // DateTime — construct with explicit components to avoid UTC interpretation
+  const [datePart, timePart] = clean.split("T");
+  const [y, m, d] = datePart.split("-").map(Number);
+  if (timePart) {
+    const [h, min, s] = timePart.split(":").map(Number);
+    return new Date(y, m - 1, d, h, min, s || 0);
+  }
+  return new Date(y, m - 1, d);
+}
+
 export function formatDate(dateStr: string | null | undefined): string {
   if (!dateStr) return "-";
-  const date = new Date(dateStr);
+  const date = parseAsNY(dateStr);
   return date.toLocaleDateString("en-CA"); // YYYY-MM-DD format
 }
 
 export function formatDateTime(dateStr: string | null | undefined): string {
   if (!dateStr) return "-";
-  const date = new Date(dateStr);
+  const date = parseAsNY(dateStr);
   return `${date.toLocaleDateString("en-CA")} ${date.toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",
@@ -36,7 +63,7 @@ export function formatDateTime(dateStr: string | null | undefined): string {
 }
 
 export function getDayName(dateStr: string): string {
-  const date = new Date(dateStr);
+  const date = parseAsNY(dateStr);
   return date.toLocaleDateString("en-US", { weekday: "long" });
 }
 
