@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { useError } from "@/lib/error-context";
@@ -9,6 +9,8 @@ import { Table, NumericCell } from "@/components/ui/Table";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
 import { formatDate } from "@/lib/utils/format";
+
+type SortDirection = "asc" | "desc";
 
 export default function EquityPage() {
   const router = useRouter();
@@ -19,6 +21,8 @@ export default function EquityPage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [uniqueDates, setUniqueDates] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [sortKey, setSortKey] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
 
   const loadData = useCallback(async () => {
     try {
@@ -122,6 +126,39 @@ export default function EquityPage() {
     setCategorySummary(categorySumm);
   }, [selectedDate, entries]);
 
+  const handleSort = useCallback((key: string) => {
+    if (sortKey === key) {
+      setSortDirection((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDirection("desc");
+    }
+  }, [sortKey]);
+
+  const filteredEntries = useMemo(() =>
+    entries.filter((e) => e.date === selectedDate),
+    [entries, selectedDate]
+  );
+
+  const sortedEntries = useMemo(() => {
+    if (!sortKey) return filteredEntries;
+    const sorted = [...filteredEntries].sort((a, b) => {
+      const aVal = (a as unknown as Record<string, unknown>)[sortKey];
+      const bVal = (b as unknown as Record<string, unknown>)[sortKey];
+
+      if (typeof aVal === "string" && typeof bVal === "string") {
+        return sortDirection === "asc"
+          ? aVal.localeCompare(bVal)
+          : bVal.localeCompare(aVal);
+      }
+
+      const aNum = typeof aVal === "number" ? aVal : 0;
+      const bNum = typeof bVal === "number" ? bVal : 0;
+      return sortDirection === "asc" ? aNum - bNum : bNum - aNum;
+    });
+    return sorted;
+  }, [filteredEntries, sortKey, sortDirection]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -130,7 +167,6 @@ export default function EquityPage() {
     );
   }
 
-  const filteredEntries = entries.filter((e) => e.date === selectedDate);
   const totalCad = filteredEntries.reduce((sum, e) => sum + (e.balance_cad || 0), 0);
   const totalNet = filteredEntries.reduce((sum, e) => sum + (e.balance_net || 0), 0);
 
@@ -138,30 +174,35 @@ export default function EquityPage() {
     {
       key: "account",
       header: "Account",
+      sortable: true,
       className: "text-[var(--gruvbox-aqua)]",
     },
     {
       key: "category",
       header: "Category",
+      sortable: true,
       className: "text-[var(--gruvbox-purple)]",
     },
-    { key: "description", header: "Description" },
-    { key: "currency", header: "Curr" },
+    { key: "description", header: "Description", sortable: true },
+    { key: "currency", header: "Curr", sortable: true },
     {
       key: "balance",
       header: "Balance",
+      sortable: true,
       align: "right" as const,
       render: (e: EquityEntry) => <NumericCell value={e.balance} format="currency" />,
     },
     {
       key: "rate",
       header: "Rate",
+      sortable: true,
       align: "right" as const,
       render: (e: EquityEntry) => e.rate.toFixed(4),
     },
     {
       key: "balance_cad",
       header: "Bal CAD",
+      sortable: true,
       align: "right" as const,
       className: "text-[var(--gruvbox-green)]",
       render: (e: EquityEntry) => <NumericCell value={e.balance_cad} format="currency" />,
@@ -169,12 +210,14 @@ export default function EquityPage() {
     {
       key: "tax",
       header: "Tax",
+      sortable: true,
       align: "right" as const,
       render: (e: EquityEntry) => (e.tax * 100).toFixed(0) + "%",
     },
     {
       key: "balance_net",
       header: "Bal Net",
+      sortable: true,
       align: "right" as const,
       className: "text-[var(--gruvbox-green)] font-bold",
       render: (e: EquityEntry) => <NumericCell value={e.balance_net} format="currency" />,
@@ -234,8 +277,8 @@ export default function EquityPage() {
               key={date}
               onClick={() => setSelectedDate(date)}
               className={`px-3 py-1 rounded text-sm ${selectedDate === date
-                  ? "bg-[var(--gruvbox-orange)] text-[var(--gruvbox-bg)]"
-                  : "bg-[var(--gruvbox-bg1)] text-[var(--gruvbox-fg3)] hover:bg-[var(--gruvbox-bg2)]"
+                ? "bg-[var(--gruvbox-orange)] text-[var(--gruvbox-bg)]"
+                : "bg-[var(--gruvbox-bg1)] text-[var(--gruvbox-fg3)] hover:bg-[var(--gruvbox-bg2)]"
                 }`}
             >
               {formatDate(date)}
@@ -250,10 +293,13 @@ export default function EquityPage() {
           Entries for {formatDate(selectedDate || "")}
         </h2>
         <Table
-          data={filteredEntries}
+          data={sortedEntries}
           columns={entryColumns}
           keyExtractor={(e) => e.id?.toString() || e.description}
           emptyMessage="No entries for this date"
+          sortKey={sortKey}
+          sortDirection={sortDirection}
+          onSort={handleSort}
         />
         <div className="mt-2 p-2 bg-[var(--gruvbox-bg1)] rounded border border-[var(--gruvbox-bg3)] flex justify-end gap-8 font-data text-sm">
           <div>
