@@ -9,7 +9,7 @@ import { calculatePnL } from "@/lib/utils/fifo";
 import { Table, NumericCell } from "@/components/ui/Table";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
-import { formatDate, getDayName } from "@/lib/utils/format";
+import { formatDate, getDayName, addDaysToDateStr, getDayOfWeek, parseAsNY } from "@/lib/utils/format";
 
 export default function DailyStatsPage() {
   const router = useRouter();
@@ -34,10 +34,14 @@ export default function DailyStatsPage() {
       trades = trades.filter((t) => t.symbol !== "USD.CAD");
       trades = calculatePnL(trades);
 
-      // Group by date
+      // Group by date — use parseAsNY to extract the local date
       const dailyMap: Record<string, number> = {};
       for (const trade of trades) {
-        const dateStr = trade.dateTime.split("T")[0];
+        const d = parseAsNY(trade.dateTime);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        const dateStr = `${y}-${m}-${day}`;
         if (!dailyMap[dateStr]) dailyMap[dateStr] = 0;
         dailyMap[dateStr] += trade.realized_pnl ?? 0;
       }
@@ -52,25 +56,24 @@ export default function DailyStatsPage() {
       }
 
       // Start from Monday January 5, 2026
-      const startDate = new Date("2026-01-05");
-      const minDate = dates[0] > "2026-01-05" ? new Date(dates[0]) : startDate;
-      const maxDate = new Date(dates[dates.length - 1]);
+      const startDateStr = "2026-01-05";
+      const minDateStr = dates[0] > startDateStr ? dates[0] : startDateStr;
+      const maxDateStr = dates[dates.length - 1];
 
       const result: DailyStat[] = [];
       let total = 0;
       let wdCount = 0;
 
-      const currentDate = new Date(minDate);
-      while (currentDate <= maxDate) {
-        const dateStr = currentDate.toISOString().split("T")[0];
-        const dayOfWeek = currentDate.getDay();
-        const pnl = dailyMap[dateStr] ?? 0;
+      let currentDateStr = minDateStr;
+      while (currentDateStr <= maxDateStr) {
+        const dayOfWeek = getDayOfWeek(currentDateStr);
+        const pnl = dailyMap[currentDateStr] ?? 0;
 
         // Include if weekday OR if has PnL
         if (dayOfWeek !== 0 && dayOfWeek !== 6 || pnl !== 0) {
           result.push({
-            date: dateStr,
-            dayName: getDayName(dateStr),
+            date: currentDateStr,
+            dayName: getDayName(currentDateStr),
             realizedPnl: pnl,
           });
           total += pnl;
@@ -79,7 +82,7 @@ export default function DailyStatsPage() {
           }
         }
 
-        currentDate.setDate(currentDate.getDate() + 1);
+        currentDateStr = addDaysToDateStr(currentDateStr, 1);
       }
 
       // Reverse to show most recent first

@@ -9,15 +9,16 @@ import { calculatePnL } from "@/lib/utils/fifo";
 import { Table, NumericCell } from "@/components/ui/Table";
 import { Button } from "@/components/ui/Button";
 import { Spinner } from "@/components/ui/Spinner";
-import { formatDate, parseAsNY } from "@/lib/utils/format";
+import { formatDate, parseAsNY, addDaysToDateStr, getDayOfWeek } from "@/lib/utils/format";
 
-function getWeekEndingFriday(date: Date): Date {
-  const d = new Date(date);
-  const day = d.getDay();
-  // Calculate days until next Friday (or current Friday if today is Friday)
+/**
+ * Given a YYYY-MM-DD string, return the week-ending Friday as YYYY-MM-DD.
+ * Uses string-based date arithmetic to avoid DST drift.
+ */
+function getWeekEndingFridayStr(dateStr: string): string {
+  const day = getDayOfWeek(dateStr); // 0=Sun, 5=Fri, 6=Sat
   const daysUntilFriday = day <= 5 ? 5 - day : 5 - day + 7;
-  d.setDate(d.getDate() + daysUntilFriday);
-  return d;
+  return addDaysToDateStr(dateStr, daysUntilFriday);
 }
 
 export default function WeeklyStatsPage() {
@@ -42,12 +43,15 @@ export default function WeeklyStatsPage() {
       trades = trades.filter((t) => t.symbol !== "USD.CAD");
       trades = calculatePnL(trades);
 
-      // Group by week ending Friday
+      // Group by week ending Friday — extract local date, then map to Friday
       const weeklyMap: Record<string, number> = {};
       for (const trade of trades) {
-        const tradeDate = parseAsNY(trade.dateTime);
-        const weekEnding = getWeekEndingFriday(tradeDate);
-        const weekStr = weekEnding.toISOString().split("T")[0];
+        const d = parseAsNY(trade.dateTime);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        const day = String(d.getDate()).padStart(2, "0");
+        const tradeDateStr = `${y}-${m}-${day}`;
+        const weekStr = getWeekEndingFridayStr(tradeDateStr);
         if (!weeklyMap[weekStr]) weeklyMap[weekStr] = 0;
         weeklyMap[weekStr] += trade.realized_pnl ?? 0;
       }
@@ -61,16 +65,10 @@ export default function WeeklyStatsPage() {
       // Fill missing weeks between startWeek and the latest
       if (allWeeks.length > 0) {
         const lastWeek = allWeeks[allWeeks.length - 1];
-        const current = new Date(startWeek);
-        const end = new Date(lastWeek);
-        const filledWeeks: string[] = [];
-        while (current <= end) {
-          filledWeeks.push(current.toISOString().split("T")[0]);
-          current.setDate(current.getDate() + 7);
-        }
-        // Merge: ensure all filledWeeks are present
-        for (const w of filledWeeks) {
-          if (!weeklyMap[w]) weeklyMap[w] = 0;
+        let currentWeek = startWeek;
+        while (currentWeek <= lastWeek) {
+          if (!weeklyMap[currentWeek]) weeklyMap[currentWeek] = 0;
+          currentWeek = addDaysToDateStr(currentWeek, 7);
         }
       }
 

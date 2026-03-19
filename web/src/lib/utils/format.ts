@@ -71,6 +71,27 @@ export function getLastDayOfMonth(year: number, month: number): Date {
   return new Date(year, month + 1, 0);
 }
 
+/**
+ * Add days to a YYYY-MM-DD string, returning a new YYYY-MM-DD string.
+ * Uses local date arithmetic (via parseAsNY) to avoid DST drift.
+ */
+export function addDaysToDateStr(dateStr: string, days: number): string {
+  const d = parseAsNY(dateStr);
+  d.setDate(d.getDate() + days);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Get the day of week (0=Sun, 6=Sat) for a YYYY-MM-DD string.
+ * Uses local date (via parseAsNY) to avoid DST issues.
+ */
+export function getDayOfWeek(dateStr: string): number {
+  return parseAsNY(dateStr).getDay();
+}
+
 export function getLastDayOfPreviousMonth(): Date {
   const now = new Date();
   return new Date(now.getFullYear(), now.getMonth(), 0);
