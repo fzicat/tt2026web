@@ -1,5 +1,7 @@
-import pandas as pd
+import csv
+from pathlib import Path
 
+import pandas as pd
 import requests
 import time
 import xml.etree.ElementTree as ET
@@ -9,6 +11,9 @@ from rich.panel import Panel
 from shared import config
 from cli.db import ibkr_db
 from base_module import Module
+
+
+PERFORMANCE_FILE = Path(__file__).resolve().parent / "data" / "ibkr_performance_2026.csv"
 
 class IBKRModule(Module):
     def __init__(self, app):
@@ -197,9 +202,204 @@ class IBKRModule(Module):
             
         except Exception as e:
             self.output_content = f"[error]Error fetching prices: {e}[/]"
-            
+
+    def _load_performance_reference(self):
+        """Load starting value and cash flows used for year performance calculations."""
+        if not PERFORMANCE_FILE.exists():
+            raise FileNotFoundError(
+                f"Performance file not found: {PERFORMANCE_FILE}"
+            )
+
+        rows = []
+        with PERFORMANCE_FILE.open("r", newline="") as handle:
+            reader = csv.DictReader(handle)
+            for idx, row in enumerate(reader, start=2):
+                date_str = (row.get("date") or "").strip()
+                entry_type = (row.get("type") or "").strip().lower()
+                amount_str = (row.get("amount") or "").strip()
+
+                if not date_str and not entry_type and not amount_str:
+                    continue
+
+                if not date_str or not entry_type or not amount_str:
+                    raise ValueError(
+                        f"Invalid row in performance file at line {idx}: {row}"
+                    )
+
+                try:
+                    amount = float(amount_str)
+                except ValueError as e:
+                    raise ValueError(
+                        f"Invalid amount in performance file at line {idx}: {amount_str}"
+                    ) from e
+
+                rows.append({
+                    "date": pd.Timestamp(date_str).normalize(),
+                    "type": entry_type,
+                    "amount": amount,
+                })
+
+        start_rows = [row for row in rows if row["type"] == "start"]
+        if not start_rows:
+            raise ValueError(
+                f"Performance file must contain one 'start' row: {PERFORMANCE_FILE}"
+            )
+        if len(start_rows) > 1:
+            raise ValueError(
+                f"Performance file must contain only one 'start' row: {PERFORMANCE_FILE}"
+            )
+
+        start_row = start_rows[0]
+        start_date = start_row["date"]
+        starting_value = start_row["amount"]
+
+        net_flows = 0.0
+        for row in rows:
+            if row["date"] < start_date or row["type"] == "start":
+                continue
+
+            if row["type"] == "deposit":
+                net_flows += row["amount"]
+            elif row["type"] == "withdrawal":
+                net_flows -= row["amount"]
+            elif row["type"] == "flow":
+                net_flows += row["amount"]
+            else:
+                raise ValueError(
+                    "Unsupported performance type "
+                    f"'{row['type']}' in {PERFORMANCE_FILE}. "
+                    "Use: start, deposit, withdrawal, or flow."
+                )
+
+        return {
+            "path": PERFORMANCE_FILE,
+            "start_date": start_date,
+            "starting_value": starting_value,
+            "net_flows": net_flows,
+            "base_value": starting_value + net_flows,
+        }
+
+    def _format_performance_value(self, value, percent=False):
+        if abs(value) < 1e-9:
+            return "-"
+
+        formatted = f"{value:.2f}%" if percent else f"{value:,.2f}"
+        if value > 0:
+            return f"[neutral_blue]{formatted}[/neutral_blue]"
+        return f"[bright_red]{formatted}[/bright_red]"
+
+    def show_performance(self):
+        try:
+            if self.trades_df.empty:
+                self.output_content = "[info]No trades loaded.[/]"
+                return
+
+            reference = self._load_performance_reference()
+            start_date = reference["start_date"]
+            base_value = reference["base_value"]
+
+            df = self.trades_df.copy()
+            df["dateTime"] = pd.to_datetime(
+                df["dateTime"], errors="coerce", utc=True
+            ).dt.tz_localize(None)
+
+            df = df[df["dateTime"] >= start_date].copy()
+
+            stock_realized = df.loc[~df["putCall"].isin(["C", "P"]), "realized_pnl"].sum()
+            call_realized = df.loc[df["putCall"] == "C", "realized_pnl"].sum()
+            put_realized = df.loc[df["putCall"] == "P", "realized_pnl"].sum()
+
+            all_stock_rows = self.trades_df[~self.trades_df["putCall"].isin(["C", "P"])]
+            stock_value = all_stock_rows["credit"].sum() * -1
+            stock_mtm = all_stock_rows["mtm_value"].sum()
+            stock_unrealized = stock_mtm - stock_value
+
+            call_unrealized = 0.0
+            put_unrealized = 0.0
+
+            realized_total = stock_realized + call_realized + put_realized
+            unrealized_total = stock_unrealized + call_unrealized + put_unrealized
+
+            dollar_rows = [
+                ("Realized PnL", stock_realized, call_realized, put_realized, realized_total),
+                ("Unrealized PnL", stock_unrealized, call_unrealized, put_unrealized, unrealized_total),
+                (
+                    "Total",
+                    stock_realized + stock_unrealized,
+                    call_realized + call_unrealized,
+                    put_realized + put_unrealized,
+                    realized_total + unrealized_total,
+                ),
+            ]
+
+            percent_rows = []
+            for label, shares, calls, puts, total in dollar_rows:
+                if base_value != 0:
+                    percent_rows.append(
+                        (
+                            label,
+                            shares / base_value * 100,
+                            calls / base_value * 100,
+                            puts / base_value * 100,
+                            total / base_value * 100,
+                        )
+                    )
+                else:
+                    percent_rows.append((label, 0.0, 0.0, 0.0, 0.0))
+
+            summary = Table.grid(padding=(0, 2))
+            summary.add_column(style="cyan")
+            summary.add_column(justify="right")
+            summary.add_row("Period Start", start_date.strftime("%Y-%m-%d"))
+            summary.add_row("Starting Value", f"{reference['starting_value']:,.2f}")
+            summary.add_row("Net Deposits / Withdrawals", f"{reference['net_flows']:,.2f}")
+            summary.add_row("Performance Base", f"{base_value:,.2f}")
+            summary.add_row("CSV", str(reference["path"]))
+            summary.add_row("Options Unrealized", "Ignored (for now)")
+
+            percent_table = Table(
+                title="Performance %",
+                expand=False,
+                row_styles=["", "on #1d2021"],
+            )
+            percent_table.add_column("Performance %", style="bold yellow")
+            percent_table.add_column("Shares", justify="right")
+            percent_table.add_column("Calls", justify="right")
+            percent_table.add_column("Puts", justify="right")
+            percent_table.add_column("Total", justify="right")
+
+            for label, shares, calls, puts, total in percent_rows:
+                percent_table.add_row(
+                    label,
+                    self._format_performance_value(shares, percent=True),
+                    self._format_performance_value(calls, percent=True),
+                    self._format_performance_value(puts, percent=True),
+                    self._format_performance_value(total, percent=True),
+                )
+
+            dollar_table = Table(
+                title="Performance $",
+                expand=False,
+                row_styles=["", "on #1d2021"],
+            )
+            dollar_table.add_column("Performance $", style="bold yellow")
+            dollar_table.add_column("Shares", justify="right")
+            dollar_table.add_column("Calls", justify="right")
+            dollar_table.add_column("Puts", justify="right")
+            dollar_table.add_column("Total", justify="right")
+
+            for label, shares, calls, puts, total in dollar_rows:
+                dollar_table.add_row(
+                    label,
+                    self._format_performance_value(shares),
+                    self._format_performance_value(calls),
+                    self._format_performance_value(puts),
+                    self._format_performance_value(total),
+                )
+
+            self.output_content = Group(summary, percent_table, dollar_table)
         except Exception as e:
-            self.output_content = f"[error]Error fetching prices: {e}[/]"
+            self.output_content = f"[error]Error calculating performance: {e}[/]"
 
     
     def handle_command(self, command):
@@ -215,6 +415,7 @@ class IBKRModule(Module):
         - I   | import     > Import daily trades
         - I W | import w   > Import weekly trades
         - M   | mtm        > Get Mark-to-Market Values
+        - PF  | performance > Year performance in $ and %
         - SD  | stats day  > Daily PnL Stats
         - SW  | stats week > Weekly PnL Stats
         - LM  | list mtm   > List all positions (by MTM)
@@ -235,6 +436,8 @@ class IBKRModule(Module):
             self.stats_daily()
         elif cmd in ['sw', 'stats week']:
             self.stats_weekly()
+        elif cmd in ['pf', 'perf', 'performance']:
+            self.show_performance()
         elif cmd in ['deb', 'debug']:
             self.debug()
         elif cmd in ['t', 'trades']:

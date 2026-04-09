@@ -319,11 +319,33 @@ These hardcoded dates are business assumptions, not generic logic.
 Main ones:
 - import daily / weekly trades
 - update MTM
+- show `performance` / `pf` year-performance tables in `$` and `%`
 - list positions in multiple sort modes
 - list trades
 - show daily/weekly stats
 - inspect a single symbol
 - edit `delta` / `und_price`
+
+### IBKR performance file
+Year-performance uses:
+- `cli/data/ibkr_performance_2026.csv`
+
+Expected CSV format:
+```csv
+date,type,amount
+2026-01-01,start,372834
+2026-01-08,deposit,27398
+```
+
+Supported `type` values:
+- `start`
+- `deposit`
+- `withdrawal`
+- `flow` (signed amount)
+
+Current rule:
+- calls/puts unrealized PnL is intentionally ignored and shown as `0`
+- percentage denominator is `starting_value + net_deposits_withdrawals_since_start`
 
 ### IBKR gotchas
 - `symbol_targets` dependency is missing from schema script
