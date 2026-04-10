@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, toCamelCaseArray } from "@/lib/supabase";
 import { useError } from "@/lib/error-context";
-import { Trade, Position } from "@/types";
+import { MarketQuote, Position } from "@/types";
 import {
   calculatePnL,
   calculateCredit,
@@ -21,7 +21,6 @@ type SortDirection = "asc" | "desc";
 export default function IBKRPage() {
   const router = useRouter();
   const { setError } = useError();
-  const [trades, setTrades] = useState<Trade[]>([]);
   const [positions, setPositions] = useState<Position[]>([]);
   const [totals, setTotals] = useState<ReturnType<typeof calculateTotals> | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,12 +41,12 @@ export default function IBKRPage() {
 
       if (tradesError) throw tradesError;
 
-      // Fetch market prices
-      const { data: pricesData, error: pricesError } = await supabase
-        .from("market_price")
-        .select("symbol, price");
+      // Fetch normalized market quotes
+      const { data: quotesData, error: quotesError } = await supabase
+        .from("market_quotes")
+        .select("*");
 
-      if (pricesError) throw pricesError;
+      if (quotesError) throw quotesError;
 
       // Fetch symbol targets
       const { data: targetsData, error: targetsError } = await supabase
@@ -56,9 +55,9 @@ export default function IBKRPage() {
 
       if (targetsError) throw targetsError;
 
-      const marketPrices: Record<string, number> = {};
-      (pricesData || []).forEach((p: { symbol: string; price: number }) => {
-        marketPrices[p.symbol] = p.price;
+      const marketQuotes: Record<string, MarketQuote> = {};
+      (quotesData || []).forEach((quote: MarketQuote) => {
+        marketQuotes[quote.contract_key] = quote;
       });
 
       const targetPercents: Record<string, number> = {};
@@ -72,9 +71,7 @@ export default function IBKRPage() {
       processedTrades = processedTrades.filter((t) => t.symbol !== "USD.CAD");
       processedTrades = calculatePnL(processedTrades);
       processedTrades = calculateCredit(processedTrades);
-      processedTrades = applyMtmPrices(processedTrades, marketPrices);
-
-      setTrades(processedTrades);
+      processedTrades = applyMtmPrices(processedTrades, marketQuotes);
 
       // Calculate positions
       const totalMtm = processedTrades.reduce(
@@ -368,6 +365,34 @@ export default function IBKRPage() {
                   totals.totalCallPnl +
                   totals.totalPutPnl
                 ).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div>
+              <span className="text-[var(--gruvbox-fg4)]">Call Unrlzd:</span>{" "}
+              <span
+                className={
+                  totals.totalCallUnrealizedPnl >= 0
+                    ? "text-[var(--gruvbox-blue)]"
+                    : "text-[var(--gruvbox-orange)]"
+                }
+              >
+                {totals.totalCallUnrealizedPnl.toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                })}
+              </span>
+            </div>
+            <div>
+              <span className="text-[var(--gruvbox-fg4)]">Put Unrlzd:</span>{" "}
+              <span
+                className={
+                  totals.totalPutUnrealizedPnl >= 0
+                    ? "text-[var(--gruvbox-blue)]"
+                    : "text-[var(--gruvbox-orange)]"
+                }
+              >
+                {totals.totalPutUnrealizedPnl.toLocaleString("en-US", {
+                  minimumFractionDigits: 2,
+                })}
               </span>
             </div>
           </div>

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, toCamelCaseArray } from "@/lib/supabase";
 import { useError } from "@/lib/error-context";
-import { Trade } from "@/types";
+import { MarketQuote, Trade } from "@/types";
 import { calculatePnL, calculateCredit, applyMtmPrices } from "@/lib/utils/fifo";
 import { Table, NumericCell } from "@/components/ui/Table";
 import { Button } from "@/components/ui/Button";
@@ -28,15 +28,15 @@ export default function TradesPage() {
 
       if (tradesError) throw tradesError;
 
-      const { data: pricesData, error: pricesError } = await supabase
-        .from("market_price")
-        .select("symbol, price");
+      const { data: quotesData, error: quotesError } = await supabase
+        .from("market_quotes")
+        .select("*");
 
-      if (pricesError) throw pricesError;
+      if (quotesError) throw quotesError;
 
-      const marketPrices: Record<string, number> = {};
-      (pricesData || []).forEach((p: { symbol: string; price: number }) => {
-        marketPrices[p.symbol] = p.price;
+      const marketQuotes: Record<string, MarketQuote> = {};
+      (quotesData || []).forEach((quote: MarketQuote) => {
+        marketQuotes[quote.contract_key] = quote;
       });
 
       let processedTrades = toCamelCaseArray<Trade>(tradesData || []);
@@ -48,7 +48,7 @@ export default function TradesPage() {
       );
       processedTrades = calculatePnL(processedTrades);
       processedTrades = calculateCredit(processedTrades);
-      processedTrades = applyMtmPrices(processedTrades, marketPrices);
+      processedTrades = applyMtmPrices(processedTrades, marketQuotes);
       // Sort back to descending
       processedTrades.sort(
         (a, b) =>
@@ -128,6 +128,25 @@ export default function TradesPage() {
       align: "right" as const,
       className: "text-[var(--gruvbox-blue)]",
       render: (t: Trade) => <NumericCell value={t.remaining_qty} />,
+    },
+    {
+      key: "mtm_price",
+      header: "MTM Px",
+      align: "right" as const,
+      render: (t: Trade) => <NumericCell value={t.mtm_price} format="currency" />,
+    },
+    {
+      key: "unrealized_pnl",
+      header: "Unrlzd",
+      align: "right" as const,
+      render: (t: Trade) => (
+        <NumericCell value={t.unrealized_pnl} format="currency" colorCode />
+      ),
+    },
+    {
+      key: "quote_status",
+      header: "Quote",
+      render: (t: Trade) => t.quote_status || "-",
     },
     {
       key: "delta",

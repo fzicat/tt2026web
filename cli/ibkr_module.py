@@ -9,7 +9,8 @@ from rich.table import Table
 from rich.console import Group
 from rich.panel import Panel
 from shared import config
-from cli.db import ibkr_db
+from cli.db import ibkr_db, market_quote_db
+from cli.services import quote_service, valuation_service
 from base_module import Module
 
 
@@ -29,28 +30,10 @@ class IBKRModule(Module):
         self.load_trades()
 
     def load_trades(self):
-        self.trades_df = ibkr_db.fetch_all_trades_as_df()
+        self.trades_df = quote_service.prepare_trades(ibkr_db.fetch_all_trades_as_df())
         if not self.trades_df.empty:
-            # Filter out USD.CAD
-            self.trades_df = self.trades_df[self.trades_df['symbol'] != 'USD.CAD']
-            
-            self.calculate_pnl()
-            
-            # Calculate Credit: remaining_qty * price * multiplier * -1
-            m = self.trades_df['multiplier'].fillna(1.0)
-            self.trades_df['credit'] = self.trades_df['remaining_qty'] * self.trades_df['tradePrice'] * m * -1
-
-            # MTM Logic
-            self.trades_df['mtm_price'] = 0.0
-            
-            market_prices = ibkr_db.fetch_latest_market_prices()
-            
-            # Map prices for non-option trades
-            mask = ~self.trades_df['putCall'].isin(['C', 'P'])
-            self.trades_df.loc[mask, 'mtm_price'] = self.trades_df.loc[mask, 'symbol'].map(market_prices).fillna(0.0)
-            
-            # Calculate MTM Value
-            self.trades_df['mtm_value'] = self.trades_df['mtm_price'] * self.trades_df['remaining_qty']
+            quotes_by_key = market_quote_db.fetch_latest_quotes()
+            self.trades_df = valuation_service.apply_quotes(self.trades_df, quotes_by_key)
 
         count = len(self.trades_df)
         self.app.console.print(f"[info]Trades loaded: {count}[/]")
@@ -142,64 +125,10 @@ class IBKRModule(Module):
                     inventory[symbol].append({'idx': idx, 'qty': qty_to_process, 'price': price})
 
     def process_mtm_update(self):
-        if self.trades_df.empty:
-            self.output_content = "[info]No trades to update.[/]"
-            return
-
-        self.app.console.print("[info]Fetching market prices...[/]")
-        
-        # Filter for non-option trades (Stocks)
-        mask = ~self.trades_df['putCall'].isin(['C', 'P'])
-        symbols_to_update = self.trades_df.loc[mask, 'symbol'].unique()
-        
-        if len(symbols_to_update) == 0:
-            self.output_content = "[info]No non-option positions found.[/]"
-            return
-
         try:
-            tickers_str = " ".join(symbols_to_update)
-            # Use yahooquery instead of yfinance
-            try:
-                from yahooquery import Ticker
-            except ImportError:
-                self.output_content = "[error]yahooquery not installed. Please install it with: pip install yahooquery[/]"
-                return
-
-            self.app.console.print(f"[info]Fetching data for {len(symbols_to_update)} symbols using yahooquery...[/]")
-            
-            t = Ticker(symbols_to_update, asynchronous=True)
-            data = t.price
-            
-            # data is a dict: {symbol: {key: value, ...}}
-            # We want 'regularMarketPrice'
-            
-            if not isinstance(data, dict):
-                 self.output_content = f"[error]Unexpected response from yahooquery: {type(data)}[/]"
-                 return
-
-            current_time = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
-            count = 0
-            
-            for sym, info in data.items():
-                # info might be a string if error, or dict if success
-                if isinstance(info, dict):
-                    price = info.get('regularMarketPrice')
-                    if price is None:
-                        # Fallback to previousClose or other fields
-                        price = info.get('regularMarketPreviousClose')
-                        
-                    if price is not None:
-                        self.app.console.print(f"[debug]Price for {sym}: {price}[/]")
-                        ibkr_db.save_market_price(sym, float(price), current_time)
-                        count += 1
-                    else:
-                        self.app.console.print(f"[warn]No price found for {sym}[/]")
-                else:
-                    self.app.console.print(f"[warn]Could not fetch data for {sym}: {info}[/]")
-
-            self.output_content = f"Updated prices for {count} symbols."
+            result = quote_service.refresh_mtm_quotes(self.trades_df)
             self.load_trades()
-            
+            self.output_content = result.get('message', 'Quote refresh complete.')
         except Exception as e:
             self.output_content = f"[error]Error fetching prices: {e}[/]"
 
@@ -310,12 +239,15 @@ class IBKRModule(Module):
             put_realized = df.loc[df["putCall"] == "P", "realized_pnl"].sum()
 
             all_stock_rows = self.trades_df[~self.trades_df["putCall"].isin(["C", "P"])]
+            call_rows = self.trades_df[self.trades_df["putCall"] == "C"]
+            put_rows = self.trades_df[self.trades_df["putCall"] == "P"]
+
             stock_value = all_stock_rows["credit"].sum() * -1
             stock_mtm = all_stock_rows["mtm_value"].sum()
-            stock_unrealized = stock_mtm - stock_value
+            stock_unrealized = all_stock_rows["unrealized_pnl"].sum()
 
-            call_unrealized = 0.0
-            put_unrealized = 0.0
+            call_unrealized = call_rows["unrealized_pnl"].sum()
+            put_unrealized = put_rows["unrealized_pnl"].sum()
 
             realized_total = stock_realized + call_realized + put_realized
             unrealized_total = stock_unrealized + call_unrealized + put_unrealized
@@ -355,7 +287,8 @@ class IBKRModule(Module):
             summary.add_row("Net Deposits / Withdrawals", f"{reference['net_flows']:,.2f}")
             summary.add_row("Performance Base", f"{base_value:,.2f}")
             summary.add_row("CSV", str(reference["path"]))
-            summary.add_row("Options Unrealized", "Ignored (for now)")
+            summary.add_row("Call Unrealized", f"{call_unrealized:,.2f}")
+            summary.add_row("Put Unrealized", f"{put_unrealized:,.2f}")
 
             percent_table = Table(
                 title="Performance %",
@@ -1105,11 +1038,14 @@ class IBKRModule(Module):
                  put_df = group[group['putCall'] == 'P']
 
                  value = stock_df['credit'].sum() * -1
-                 mtm = stock_df['mtm_value'].sum()
+                 stock_mtm = stock_df['mtm_value'].sum()
+                 call_mtm = call_df['mtm_value'].sum()
+                 put_mtm = put_df['mtm_value'].sum()
+                 mtm = stock_mtm + call_mtm + put_mtm
                  
                  # Get share price for target shares calculation
                  share_price = stock_df['mtm_price'].max() if not stock_df.empty else 0.0
-                 unrlzd_pnl = mtm - value
+                 unrlzd_pnl = group['unrealized_pnl'].sum()
                  
                  s_qty = stock_df['remaining_qty'].sum()
                  c_qty = call_df['remaining_qty'].sum()

@@ -1,4 +1,4 @@
-import { Trade, Position } from "@/types";
+import { MarketQuote, Position, Trade } from "@/types";
 
 interface InventoryItem {
   idx: number;
@@ -6,17 +6,63 @@ interface InventoryItem {
   price: number;
 }
 
+function normalizeSymbol(symbol: string | null | undefined): string {
+  return (symbol || "").trim().toUpperCase();
+}
+
+function normalizePutCall(putCall: string | null | undefined): "C" | "P" | null {
+  const value = (putCall || "").trim().toUpperCase();
+  if (value === "C" || value === "P") return value;
+  if (value === "CALL") return "C";
+  if (value === "PUT") return "P";
+  return null;
+}
+
+function normalizeExpiry(expiry: string | null | undefined): string | null {
+  if (!expiry) return null;
+  const digits = expiry.replace(/\D/g, "");
+  return digits.length === 8 ? digits : null;
+}
+
+function normalizeStrike(strike: number | null | undefined): string | null {
+  if (strike === null || strike === undefined || Number.isNaN(strike)) return null;
+  return strike.toFixed(4);
+}
+
+export function isOptionTrade(trade: Pick<Trade, "putCall">): boolean {
+  return normalizePutCall(trade.putCall) !== null;
+}
+
+export function buildContractKey(trade: Trade): string | null {
+  if (isOptionTrade(trade)) {
+    const underlying = normalizeSymbol(trade.underlyingSymbol || trade.symbol);
+    const expiry = normalizeExpiry(trade.expiry);
+    const putCall = normalizePutCall(trade.putCall);
+    const strike = normalizeStrike(trade.strike);
+    const multiplier = trade.multiplier ?? 100;
+
+    if (!underlying || !expiry || !putCall || !strike || !multiplier) {
+      return null;
+    }
+
+    return `OPT::${underlying}::${expiry}::${putCall}::${strike}::${multiplier}`;
+  }
+
+  const symbol = normalizeSymbol(trade.symbol);
+  if (!symbol) return null;
+  return `EQ::${symbol}`;
+}
+
 export function calculatePnL(trades: Trade[]): Trade[] {
   if (trades.length === 0) return [];
 
-  // Create a copy with initialized fields
   const result = trades.map((trade) => ({
     ...trade,
+    contractKey: buildContractKey(trade),
     realized_pnl: 0,
     remaining_qty: 0,
   }));
 
-  // Inventory: symbol -> list of {idx, qty, price}
   const inventory: Record<string, InventoryItem[]> = {};
 
   for (let idx = 0; idx < result.length; idx++) {
@@ -30,22 +76,18 @@ export function calculatePnL(trades: Trade[]): Trade[] {
       inventory[symbol] = [];
     }
 
-    // If inventory is empty, open/add
     if (inventory[symbol].length === 0) {
       result[idx].remaining_qty = qty;
       inventory[symbol].push({ idx, qty, price });
       continue;
     }
 
-    // Check head of inventory
     const head = inventory[symbol][0];
 
-    // Same sign means adding to position
     if ((qty > 0 && head.qty > 0) || (qty < 0 && head.qty < 0)) {
       result[idx].remaining_qty = qty;
       inventory[symbol].push({ idx, qty, price });
     } else {
-      // Opposite sign: Close/Reduce position
       let qtyToProcess = qty;
       let totalPnl = 0;
 
@@ -56,21 +98,17 @@ export function calculatePnL(trades: Trade[]): Trade[] {
         const openIdx = item.idx;
 
         if (Math.abs(qtyToProcess) >= Math.abs(openQty)) {
-          // Fully consume this open lot
           const matchQty = -openQty;
           const termPnl = -(price - openPrice) * matchQty * multiplier;
           totalPnl += termPnl;
           qtyToProcess -= matchQty;
 
-          // Update matched open lot
           result[openIdx].remaining_qty = 0;
           inventory[symbol].shift();
         } else {
-          // Partially consume open lot
           const termPnl = -(price - openPrice) * qtyToProcess * multiplier;
           totalPnl += termPnl;
 
-          // Update inventory item
           item.qty += qtyToProcess;
           result[openIdx].remaining_qty = item.qty;
 
@@ -80,7 +118,6 @@ export function calculatePnL(trades: Trade[]): Trade[] {
 
       result[idx].realized_pnl = totalPnl;
 
-      // If we still have quantity left, it becomes new position
       if (qtyToProcess !== 0) {
         result[idx].remaining_qty = qtyToProcess;
         inventory[symbol].push({ idx, qty: qtyToProcess, price });
@@ -95,25 +132,112 @@ export function calculateCredit(trades: Trade[]): Trade[] {
   return trades.map((trade) => {
     const multiplier = trade.multiplier ?? 1;
     const credit = (trade.remaining_qty ?? 0) * trade.tradePrice * multiplier * -1;
-    return { ...trade, credit };
+    return { ...trade, contractKey: trade.contractKey ?? buildContractKey(trade), credit };
+  });
+}
+
+function deriveLegacyContractQuote(
+  trade: Trade,
+  prices: Record<string, number>
+): MarketQuote | null {
+  if (isOptionTrade(trade)) return null;
+
+  const price = prices[trade.symbol];
+  if (price === undefined) return null;
+
+  return {
+    contract_key: buildContractKey(trade) || `EQ::${trade.symbol}`,
+    instrument_type: "equity",
+    source: "yahoo_fallback",
+    symbol: trade.symbol,
+    underlying_symbol: trade.underlyingSymbol || trade.symbol,
+    expiry: null,
+    put_call: null,
+    strike: null,
+    multiplier: 1,
+    conid: null,
+    bid: null,
+    ask: null,
+    last: price,
+    close: null,
+    mark: price,
+    status: "live",
+    quote_time: null,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+export function applyMarketQuotes(
+  trades: Trade[],
+  quotesByKey: Record<string, MarketQuote>
+): Trade[] {
+  return trades.map((trade) => {
+    const contractKey = trade.contractKey ?? buildContractKey(trade);
+    const quote = contractKey ? quotesByKey[contractKey] : undefined;
+    const multiplier = trade.multiplier ?? (isOptionTrade(trade) ? 100 : 1);
+
+    if (!contractKey) {
+      return {
+        ...trade,
+        contractKey: null,
+        quote_status: "contract_unresolved",
+        quote_source: null,
+        mtm_price: null,
+        mtm_value: null,
+        unrealized_pnl: null,
+      };
+    }
+
+    if (!quote || quote.mark === null || quote.mark === undefined) {
+      return {
+        ...trade,
+        contractKey,
+        quote_status: quote?.status ?? "unavailable",
+        quote_source: quote?.source ?? null,
+        mtm_price: null,
+        mtm_value: null,
+        unrealized_pnl: null,
+      };
+    }
+
+    const mtmPrice = quote.mark;
+    const mtmValue =
+      mtmPrice * (trade.remaining_qty ?? 0) * (isOptionTrade(trade) ? multiplier : 1);
+    const unrealizedPnl = mtmValue + (trade.credit ?? 0);
+
+    return {
+      ...trade,
+      contractKey,
+      quote_status: quote.status,
+      quote_source: quote.source,
+      mtm_price: mtmPrice,
+      mtm_value: mtmValue,
+      unrealized_pnl: unrealizedPnl,
+    };
   });
 }
 
 export function applyMtmPrices(
   trades: Trade[],
-  marketPrices: Record<string, number>
+  marketData: Record<string, number> | Record<string, MarketQuote>
 ): Trade[] {
-  return trades.map((trade) => {
-    // Only apply MTM for non-option trades
-    const isOption = trade.putCall === "C" || trade.putCall === "P";
-    if (isOption) {
-      return { ...trade, mtm_price: 0, mtm_value: 0 };
-    }
+  const values = Object.values(marketData);
+  const looksLikeQuoteMap = values.length > 0 && typeof values[0] === "object";
 
-    const mtmPrice = marketPrices[trade.symbol] ?? 0;
-    const mtmValue = mtmPrice * (trade.remaining_qty ?? 0);
-    return { ...trade, mtm_price: mtmPrice, mtm_value: mtmValue };
-  });
+  if (looksLikeQuoteMap) {
+    return applyMarketQuotes(trades, marketData as Record<string, MarketQuote>);
+  }
+
+  const priceMap = marketData as Record<string, number>;
+  const quoteMap: Record<string, MarketQuote> = {};
+  for (const trade of trades) {
+    const legacyQuote = deriveLegacyContractQuote(trade, priceMap);
+    if (legacyQuote) {
+      quoteMap[legacyQuote.contract_key] = legacyQuote;
+    }
+  }
+
+  return applyMarketQuotes(trades, quoteMap);
 }
 
 export function groupByUnderlying(trades: Trade[]): Record<string, Trade[]> {
@@ -137,15 +261,29 @@ export function calculatePositions(
   const positions: Position[] = [];
 
   for (const [symbol, groupTrades] of Object.entries(groups)) {
-    const stockTrades = groupTrades.filter(
-      (t) => t.putCall !== "C" && t.putCall !== "P"
-    );
-    const callTrades = groupTrades.filter((t) => t.putCall === "C");
-    const putTrades = groupTrades.filter((t) => t.putCall === "P");
+    const stockTrades = groupTrades.filter((t) => !isOptionTrade(t));
+    const callTrades = groupTrades.filter((t) => normalizePutCall(t.putCall) === "C");
+    const putTrades = groupTrades.filter((t) => normalizePutCall(t.putCall) === "P");
 
-    const value = stockTrades.reduce((sum, t) => sum + (t.credit ?? 0), 0) * -1;
-    const mtm = stockTrades.reduce((sum, t) => sum + (t.mtm_value ?? 0), 0);
-    const unrealizedPnl = mtm - value;
+    const stockValue = stockTrades.reduce((sum, t) => sum + (t.credit ?? 0), 0) * -1;
+    const stockMtm = stockTrades.reduce((sum, t) => sum + (t.mtm_value ?? 0), 0);
+    const callMtm = callTrades.reduce((sum, t) => sum + (t.mtm_value ?? 0), 0);
+    const putMtm = putTrades.reduce((sum, t) => sum + (t.mtm_value ?? 0), 0);
+    const mtm = stockMtm + callMtm + putMtm;
+
+    const stockUnrealizedPnl = stockTrades.reduce(
+      (sum, t) => sum + (t.unrealized_pnl ?? 0),
+      0
+    );
+    const callUnrealizedPnl = callTrades.reduce(
+      (sum, t) => sum + (t.unrealized_pnl ?? 0),
+      0
+    );
+    const putUnrealizedPnl = putTrades.reduce(
+      (sum, t) => sum + (t.unrealized_pnl ?? 0),
+      0
+    );
+    const unrealizedPnl = stockUnrealizedPnl + callUnrealizedPnl + putUnrealizedPnl;
 
     const stockQty = stockTrades.reduce((sum, t) => sum + (t.remaining_qty ?? 0), 0);
     const callQty = callTrades.reduce((sum, t) => sum + (t.remaining_qty ?? 0), 0);
@@ -155,13 +293,11 @@ export function calculatePositions(
     const callPnl = callTrades.reduce((sum, t) => sum + (t.realized_pnl ?? 0), 0);
     const putPnl = putTrades.reduce((sum, t) => sum + (t.realized_pnl ?? 0), 0);
 
-    // Calculate book price
     const creditSum = stockTrades.reduce((sum, t) => sum + (t.credit ?? 0), 0);
     const bookPrice = stockQty !== 0 ? creditSum / stockQty : 0;
 
-    // Skip positions with no activity
     if (
-      value === 0 &&
+      stockValue === 0 &&
       mtm === 0 &&
       stockQty === 0 &&
       callQty === 0 &&
@@ -176,11 +312,18 @@ export function calculatePositions(
     positions.push({
       symbol,
       underlyingSymbol: symbol,
-      value,
+      value: stockValue,
       mtm,
       mtmPercent: totalMtm !== 0 ? (mtm / totalMtm) * 100 : 0,
       targetPercent: targetPercents[symbol] ?? 0,
       unrealizedPnl,
+      stockValue,
+      stockMtm,
+      callMtm,
+      putMtm,
+      stockUnrealizedPnl,
+      callUnrealizedPnl,
+      putUnrealizedPnl,
       stockQty,
       callQty,
       putQty,
@@ -199,6 +342,9 @@ export function calculateTotals(positions: Position[]) {
     totalValue: positions.reduce((sum, p) => sum + p.value, 0),
     totalMtm: positions.reduce((sum, p) => sum + p.mtm, 0),
     totalUnrealizedPnl: positions.reduce((sum, p) => sum + p.unrealizedPnl, 0),
+    totalStockUnrealizedPnl: positions.reduce((sum, p) => sum + p.stockUnrealizedPnl, 0),
+    totalCallUnrealizedPnl: positions.reduce((sum, p) => sum + p.callUnrealizedPnl, 0),
+    totalPutUnrealizedPnl: positions.reduce((sum, p) => sum + p.putUnrealizedPnl, 0),
     totalStockQty: positions.reduce((sum, p) => sum + p.stockQty, 0),
     totalCallQty: positions.reduce((sum, p) => sum + p.callQty, 0),
     totalPutQty: positions.reduce((sum, p) => sum + p.putQty, 0),

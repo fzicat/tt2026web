@@ -14,3 +14,10 @@ SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")  # Anon key for frontend
 IBKR_TOKEN = os.getenv("IBKR_TOKEN", "")
 QUERY_ID_DAILY = os.getenv("QUERY_ID_DAILY", "")
 QUERY_ID_WEEKLY = os.getenv("QUERY_ID_WEEKLY", "")
+
+# IB Gateway API Configuration
+IB_GATEWAY_HOST = os.getenv("IB_GATEWAY_HOST", "127.0.0.1")
+IB_GATEWAY_PORT = int(os.getenv("IB_GATEWAY_PORT", "7497"))
+IB_GATEWAY_CLIENT_ID = int(os.getenv("IB_GATEWAY_CLIENT_ID", "1919"))
+IB_GATEWAY_TIMEOUT = float(os.getenv("IB_GATEWAY_TIMEOUT", "5"))
+IB_GATEWAY_READ_ONLY = os.getenv("IB_GATEWAY_READ_ONLY", "true").lower() in {"1", "true", "yes", "on"}

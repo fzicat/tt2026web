@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, use } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, toCamelCaseArray } from "@/lib/supabase";
 import { useError } from "@/lib/error-context";
-import { Trade } from "@/types";
+import { MarketQuote, Trade } from "@/types";
 import { calculatePnL, calculateCredit, applyMtmPrices } from "@/lib/utils/fifo";
 import { Table, NumericCell } from "@/components/ui/Table";
 import { Button } from "@/components/ui/Button";
@@ -20,6 +20,9 @@ interface PositionSummary {
   stockPnl: number;
   callPnl: number;
   putPnl: number;
+  stockUnrealized: number;
+  callUnrealized: number;
+  putUnrealized: number;
 }
 
 export default function PositionDetailPage({
@@ -46,16 +49,16 @@ export default function PositionDetailPage({
 
       if (tradesError) throw tradesError;
 
-      // Fetch market prices
-      const { data: pricesData, error: pricesError } = await supabase
-        .from("market_price")
-        .select("symbol, price");
+      // Fetch normalized market quotes
+      const { data: quotesData, error: quotesError } = await supabase
+        .from("market_quotes")
+        .select("*");
 
-      if (pricesError) throw pricesError;
+      if (quotesError) throw quotesError;
 
-      const marketPrices: Record<string, number> = {};
-      (pricesData || []).forEach((p: { symbol: string; price: number }) => {
-        marketPrices[p.symbol] = p.price;
+      const marketQuotes: Record<string, MarketQuote> = {};
+      (quotesData || []).forEach((quote: MarketQuote) => {
+        marketQuotes[quote.contract_key] = quote;
       });
 
       // Process all trades first (FIFO needs all trades)
@@ -63,7 +66,7 @@ export default function PositionDetailPage({
       processedTrades = processedTrades.filter((t) => t.symbol !== "USD.CAD");
       processedTrades = calculatePnL(processedTrades);
       processedTrades = calculateCredit(processedTrades);
-      processedTrades = applyMtmPrices(processedTrades, marketPrices);
+      processedTrades = applyMtmPrices(processedTrades, marketQuotes);
 
       // Filter to symbol
       const symbolTrades = processedTrades.filter(
@@ -110,6 +113,19 @@ export default function PositionDetailPage({
         0
       );
 
+      const stockUnrealized = stockTrades.reduce(
+        (sum, t) => sum + (t.unrealized_pnl ?? 0),
+        0
+      );
+      const callUnrealized = callTrades.reduce(
+        (sum, t) => sum + (t.unrealized_pnl ?? 0),
+        0
+      );
+      const putUnrealized = putTrades.reduce(
+        (sum, t) => sum + (t.unrealized_pnl ?? 0),
+        0
+      );
+
       const creditSum = stockTrades.reduce((sum, t) => sum + (t.credit ?? 0), 0);
       const bookPrice = stockQty !== 0 ? creditSum / stockQty : 0;
 
@@ -122,6 +138,9 @@ export default function PositionDetailPage({
         stockPnl,
         callPnl,
         putPnl,
+        stockUnrealized,
+        callUnrealized,
+        putUnrealized,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load data");
@@ -212,6 +231,25 @@ export default function PositionDetailPage({
     className: "text-[var(--gruvbox-blue)]",
     render: (t: Trade) => <NumericCell value={t.credit} format="currency" />,
   };
+  const mtmPriceColumn = {
+    key: "mtm_price",
+    header: "MTM Px",
+    align: "right" as const,
+    render: (t: Trade) => <NumericCell value={t.mtm_price} format="currency" />,
+  };
+  const unrealizedColumn = {
+    key: "unrealized_pnl",
+    header: "Unrlzd",
+    align: "right" as const,
+    render: (t: Trade) => (
+      <NumericCell value={t.unrealized_pnl} format="currency" colorCode />
+    ),
+  };
+  const quoteStatusColumn = {
+    key: "quote_status",
+    header: "Quote",
+    render: (t: Trade) => t.quote_status || "-",
+  };
   const deltaColumn = {
     key: "delta",
     header: "Delta",
@@ -239,6 +277,9 @@ export default function PositionDetailPage({
     pnlColumn,
     remQtyColumn,
     creditColumn,
+    mtmPriceColumn,
+    unrealizedColumn,
+    quoteStatusColumn,
   ];
 
   // Closing Options: Date, Desc, Qty, Price, Comm, O/C, Realized PnL
@@ -264,6 +305,9 @@ export default function PositionDetailPage({
     ocColumn,
     remQtyColumn,
     creditColumn,
+    mtmPriceColumn,
+    unrealizedColumn,
+    quoteStatusColumn,
     deltaColumn,
     undPriceColumn,
   ];
@@ -328,6 +372,26 @@ export default function PositionDetailPage({
               <span className="text-[var(--gruvbox-fg4)]">Total PnL:</span>{" "}
               <NumericCell
                 value={summary.stockPnl + summary.callPnl + summary.putPnl}
+                format="currency"
+                colorCode
+              />
+            </div>
+            <div>
+              <span className="text-[var(--gruvbox-fg4)]">Stock Unrlzd:</span>{" "}
+              <NumericCell value={summary.stockUnrealized} format="currency" colorCode />
+            </div>
+            <div>
+              <span className="text-[var(--gruvbox-fg4)]">Call Unrlzd:</span>{" "}
+              <NumericCell value={summary.callUnrealized} format="currency" colorCode />
+            </div>
+            <div>
+              <span className="text-[var(--gruvbox-fg4)]">Put Unrlzd:</span>{" "}
+              <NumericCell value={summary.putUnrealized} format="currency" colorCode />
+            </div>
+            <div>
+              <span className="text-[var(--gruvbox-fg4)]">Total Unrlzd:</span>{" "}
+              <NumericCell
+                value={summary.stockUnrealized + summary.callUnrealized + summary.putUnrealized}
                 format="currency"
                 colorCode
               />

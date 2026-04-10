@@ -19,11 +19,15 @@ export interface Trade {
   delta: number | null;
   und_price: number | null;
   // Calculated fields
+  contractKey?: string | null;
   realized_pnl?: number;
   remaining_qty?: number;
   credit?: number;
-  mtm_price?: number;
-  mtm_value?: number;
+  quote_source?: string | null;
+  quote_status?: string | null;
+  mtm_price?: number | null;
+  mtm_value?: number | null;
+  unrealized_pnl?: number | null;
 }
 
 export interface Position {
@@ -34,6 +38,13 @@ export interface Position {
   mtmPercent: number;
   targetPercent: number;
   unrealizedPnl: number;
+  stockValue: number;
+  stockMtm: number;
+  callMtm: number;
+  putMtm: number;
+  stockUnrealizedPnl: number;
+  callUnrealizedPnl: number;
+  putUnrealizedPnl: number;
   stockQty: number;
   callQty: number;
   putQty: number;
@@ -63,6 +74,28 @@ export interface MarketPrice {
   symbol: string;
   price: number;
   date_time: string;
+}
+
+export interface MarketQuote {
+  contract_key: string;
+  instrument_type: "equity" | "option";
+  source: "ibkr" | "yahoo_fallback";
+  symbol: string;
+  underlying_symbol: string | null;
+  expiry: string | null;
+  put_call: string | null;
+  strike: number | null;
+  multiplier: number | null;
+  conid: string | null;
+  bid: number | null;
+  ask: number | null;
+  last: number | null;
+  close: number | null;
+  mark: number | null;
+  status: string;
+  quote_time: string | null;
+  raw_payload?: unknown;
+  updated_at: string;
 }
 
 export interface SymbolTarget {

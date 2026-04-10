@@ -6,7 +6,7 @@ A personal trading portfolio management app with two interfaces — a terminal C
 
 - **IBKR Trade Import** — Pull trades from Interactive Brokers via Flex Query API
 - **FIFO P&L** — Automatic realized/unrealized profit & loss using FIFO matching
-- **Mark-to-Market** — Live position pricing via Yahoo Finance
+- **Mark-to-Market** — IB Gateway quotes for equities and options, with YahooQuery fallback for equities when IBKR is unavailable
 - **FBN Tracking** — Monthly and yearly account stats (investments, dividends, fees, etc.)
 - **Equity Tracking** — Personal asset/balance tracking with pivot tables
 - **Gruvbox Dark Theme** — Consistent dark theme across both interfaces
@@ -39,7 +39,7 @@ Run the schema script in your Supabase SQL Editor:
 -- scripts/supabase_schema.sql
 ```
 
-This creates the `trades`, `market_price`, `fbn`, and `equity` tables with row-level security.
+This creates the `trades`, `market_price` (legacy compatibility), `market_quotes`, `fbn`, and `equity` tables with row-level security.
 
 ### 2. Environment
 
@@ -55,6 +55,9 @@ SUPABASE_KEY=<service-role-key>
 SUPABASE_ANON_KEY=<anon-key>
 IBKR_TOKEN=<your-ibkr-flex-token>
 QUERY_ID_DAILY=<your-daily-query-id>
+IB_GATEWAY_HOST=127.0.0.1
+IB_GATEWAY_PORT=7497
+IB_GATEWAY_CLIENT_ID=1919
 ```
 
 For the web app, create `web/.env.local`:
@@ -64,6 +67,7 @@ NEXT_PUBLIC_SUPABASE_URL=https://<ref>.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
 IBKR_TOKEN=<your-ibkr-flex-token>
 QUERY_ID_DAILY=<your-daily-query-id>
+PYTHON_BIN=python3
 ```
 
 ### 3. CLI
@@ -115,7 +119,7 @@ The CLI uses a module system navigated by single-key commands:
 
 ## Tech Stack
 
-**CLI:** Python · Rich · pandas · yahooquery · Supabase Python SDK
+**CLI:** Python · Rich · pandas · ib-insync · yahooquery · Supabase Python SDK
 
 **Web:** Next.js 16 · React 19 · Tailwind CSS 4 · Supabase JS · TypeScript
 
