@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from itertools import islice
-from typing import Iterable, Sequence
+from typing import Any, Iterable, Sequence
 
 from cli.domain.contracts import EquityContract, OptionContract
 from cli.domain.quotes import (
@@ -16,6 +16,9 @@ from cli.providers.quote_provider import ProviderStatus
 from shared.ibkr_gateway_config import DEFAULT_IB_GATEWAY_CONFIG, IBGatewayConfig
 
 
+PERMISSION_ERROR_CODES = {10089, 10090, 10091}
+
+
 class IBKRGatewayProvider:
     source = "ibkr"
 
@@ -23,6 +26,7 @@ class IBKRGatewayProvider:
         self.config = config or DEFAULT_IB_GATEWAY_CONFIG
         self.ib = None
         self._ib_insync_import_error: Exception | None = None
+        self._request_errors: dict[str, dict[str, Any]] = {}
 
         try:
             from ib_insync import IB, Stock, Option  # type: ignore
@@ -62,6 +66,7 @@ class IBKRGatewayProvider:
                     status="gateway_unreachable",
                     message="IB Gateway connection did not become active",
                 )
+            self.ib.errorEvent += self._on_error
             return ProviderStatus(ok=True, status="live", message="connected")
         except Exception as exc:  # pragma: no cover - network/runtime dependent
             self.ib = None
@@ -74,10 +79,15 @@ class IBKRGatewayProvider:
     def disconnect(self) -> None:
         if self.ib is not None:
             try:
+                try:
+                    self.ib.errorEvent -= self._on_error
+                except Exception:
+                    pass
                 if self.ib.isConnected():
                     self.ib.disconnect()
             finally:
                 self.ib = None
+                self._request_errors.clear()
 
     def fetch_equity_quotes(self, contracts: Sequence[EquityContract]) -> list[QuoteRecord]:
         ib_contracts = [self._Stock(c.symbol, "SMART", c.currency or "USD") for c in contracts]
@@ -121,19 +131,7 @@ class IBKRGatewayProvider:
 
             qualified_map = self._match_qualified(contract_batch, qualified, instrument_type)
             to_request = [pair[1] for pair in qualified_map if pair[1] is not None]
-
-            ticker_map = {}
-            if to_request:
-                try:
-                    tickers = self.ib.reqTickers(*to_request)
-                    ticker_map = {getattr(t.contract, "conId", None): t for t in tickers}
-                except Exception as exc:  # pragma: no cover - broker/runtime dependent
-                    for contract, qualified_contract in qualified_map:
-                        if qualified_contract is None:
-                            quotes.append(self._unresolved_quote(contract, instrument_type, reason="qualification_failed"))
-                        else:
-                            quotes.append(self._unavailable_quote(contract, instrument_type, reason=str(exc)))
-                    continue
+            ticker_map, error_map = self._request_tickers(to_request, market_data_type=3)
 
             for contract, qualified_contract in qualified_map:
                 if qualified_contract is None:
@@ -141,11 +139,50 @@ class IBKRGatewayProvider:
                     continue
 
                 ticker = ticker_map.get(getattr(qualified_contract, "conId", None))
-                quotes.append(self._ticker_to_quote(contract, qualified_contract, ticker, instrument_type))
+                request_error = error_map.get(self._contract_error_key(qualified_contract))
+                quotes.append(
+                    self._ticker_to_quote(
+                        contract,
+                        qualified_contract,
+                        ticker,
+                        instrument_type,
+                        request_error=request_error,
+                    )
+                )
 
         return quotes
 
-    def _ticker_to_quote(self, contract, qualified_contract, ticker, instrument_type: str) -> QuoteRecord:
+    def _request_tickers(self, qualified_contracts: Sequence, market_data_type: int) -> tuple[dict[int, Any], dict[str, dict[str, Any]]]:
+        if not qualified_contracts:
+            return {}, {}
+
+        self._request_errors.clear()
+        try:
+            self.ib.reqMarketDataType(market_data_type)
+            tickers = self.ib.reqTickers(*qualified_contracts)
+        except Exception as exc:  # pragma: no cover - broker/runtime dependent
+            error_payload = {
+                self._contract_error_key(contract): {
+                    "code": None,
+                    "message": str(exc),
+                }
+                for contract in qualified_contracts
+            }
+            return {}, error_payload
+
+        ticker_map = {getattr(t.contract, "conId", None): t for t in tickers}
+        error_map = dict(self._request_errors)
+        self._request_errors.clear()
+        return ticker_map, error_map
+
+    def _ticker_to_quote(
+        self,
+        contract,
+        qualified_contract,
+        ticker,
+        instrument_type: str,
+        request_error: dict[str, Any] | None = None,
+    ) -> QuoteRecord:
         quote_time = utc_now_iso()
         bid = ask = last = close = mark = None
         raw_payload = {
@@ -155,6 +192,9 @@ class IBKRGatewayProvider:
                 "exchange": getattr(qualified_contract, "exchange", None),
             }
         }
+
+        if request_error:
+            raw_payload["request_error"] = request_error
 
         if ticker is not None:
             bid = clean_number(getattr(ticker, "bid", None))
@@ -178,7 +218,7 @@ class IBKRGatewayProvider:
             else:
                 mark = derive_equity_mark(last=last, market_price=market_price, close=close)
 
-        status = self._resolve_status(ticker, mark)
+        status = self._resolve_status(ticker, mark, request_error=request_error)
 
         return QuoteRecord(
             contract_key=contract.contract_key,
@@ -201,7 +241,10 @@ class IBKRGatewayProvider:
             raw_payload=raw_payload,
         )
 
-    def _resolve_status(self, ticker, mark: float | None) -> str:
+    def _resolve_status(self, ticker, mark: float | None, request_error: dict[str, Any] | None = None) -> str:
+        error_code = request_error.get("code") if request_error else None
+        if error_code in PERMISSION_ERROR_CODES and mark is None:
+            return "permission_denied"
         if ticker is None:
             return "unavailable"
         market_data_type = getattr(ticker, "marketDataType", None)
@@ -212,6 +255,26 @@ class IBKRGatewayProvider:
         if mark is not None:
             return "live"
         return "unavailable"
+
+    def _on_error(self, req_id, error_code, error_string, contract):  # pragma: no cover - broker/runtime dependent
+        if error_code not in PERMISSION_ERROR_CODES:
+            return
+        if contract is None:
+            return
+        self._request_errors[self._contract_error_key(contract)] = {
+            "code": error_code,
+            "message": error_string,
+        }
+
+    def _contract_error_key(self, contract) -> str:
+        conid = getattr(contract, "conId", None)
+        if conid:
+            return f"conid::{conid}"
+        symbol = getattr(contract, "symbol", "")
+        expiry = getattr(contract, "lastTradeDateOrContractMonth", "")
+        right = getattr(contract, "right", "")
+        strike = getattr(contract, "strike", "")
+        return f"sym::{symbol}::{expiry}::{right}::{strike}"
 
     def _gateway_unreachable_quote(self, contract, instrument_type: str) -> QuoteRecord:
         return QuoteRecord(
@@ -240,22 +303,6 @@ class IBKRGatewayProvider:
             strike=getattr(contract, "strike", None),
             multiplier=getattr(contract, "multiplier", None),
             status="contract_unresolved",
-            quote_time=utc_now_iso(),
-            raw_payload={"reason": reason},
-        )
-
-    def _unavailable_quote(self, contract, instrument_type: str, reason: str) -> QuoteRecord:
-        return QuoteRecord(
-            contract_key=contract.contract_key,
-            instrument_type=instrument_type,
-            source=self.source,
-            symbol=contract.symbol,
-            underlying_symbol=getattr(contract, "underlying_symbol", None) or contract.symbol,
-            expiry=getattr(contract, "expiry", None),
-            put_call=getattr(contract, "put_call", None),
-            strike=getattr(contract, "strike", None),
-            multiplier=getattr(contract, "multiplier", None),
-            status="unavailable",
             quote_time=utc_now_iso(),
             raw_payload={"reason": reason},
         )

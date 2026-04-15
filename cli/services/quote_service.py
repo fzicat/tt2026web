@@ -189,10 +189,34 @@ def refresh_mtm_quotes(trades_df: pd.DataFrame | None = None) -> dict[str, Any]:
     if ib_status.ok:
         provider_messages.append("ibkr:connected")
         try:
-            fetched_quotes.extend(ib_provider.fetch_equity_quotes(equities))
-            fetched_quotes.extend(ib_provider.fetch_option_quotes(options))
+            equity_quotes = ib_provider.fetch_equity_quotes(equities)
+            option_quotes = ib_provider.fetch_option_quotes(options)
         finally:
             ib_provider.disconnect()
+
+        equity_quote_lookup = {quote.contract_key: quote for quote in equity_quotes}
+        yahoo_fallback_contracts = [
+            contract
+            for contract in equities
+            if (
+                (quote := equity_quote_lookup.get(contract.contract_key)) is not None
+                and quote.status in {"permission_denied", "unavailable"}
+                and quote.mark is None
+            )
+        ]
+
+        if yahoo_fallback_contracts:
+            yahoo_provider = YahooEquityProvider()
+            try:
+                yahoo_quotes = yahoo_provider.fetch_equity_quotes(yahoo_fallback_contracts)
+                provider_messages.append(f"yahoo_fallback:equities:{len(yahoo_fallback_contracts)}")
+                for quote in yahoo_quotes:
+                    equity_quote_lookup[quote.contract_key] = quote
+            except Exception as exc:
+                provider_messages.append(f"yahoo_fallback:failed:{exc}")
+
+        fetched_quotes.extend(equity_quote_lookup.values())
+        fetched_quotes.extend(option_quotes)
     else:
         provider_messages.append(f"ibkr:{ib_status.status}:{ib_status.message}")
         yahoo_provider = YahooEquityProvider()
