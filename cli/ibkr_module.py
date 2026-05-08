@@ -567,11 +567,25 @@ class IBKRModule(Module):
             else:
                 book_price = 0.0
 
+            # Portfolio-level MTM for MTM % and target shares calculation
+            total_portfolio_mtm = self.trades_df['mtm_value'].sum() if 'mtm_value' in self.trades_df.columns else 0.0
+            position_mtm = df['mtm_value'].sum() if 'mtm_value' in df.columns else 0.0
+            mtm_pct = (position_mtm / total_portfolio_mtm * 100) if total_portfolio_mtm else 0.0
+            target_pct = self.target_percent.get(symbol, 0.0)
+            share_price = stock_df['mtm_price'].max() if not stock_df.empty else 0.0
+            if target_pct and share_price:
+                target_shares = round(total_portfolio_mtm * target_pct / 100 / share_price)
+            else:
+                target_shares = 0
+
             # Create Summary Table
             summary_table = Table(title=f"Position Summary: {symbol}", expand=False, row_styles=["", "on #1d2021"])
             summary_table.add_column("Symbol", style="bold yellow")
             summary_table.add_column("Book Price", justify="right")
-            summary_table.add_column("Stk Rem Qty", justify="right", style="magenta")
+            summary_table.add_column("Shares", justify="right", style="magenta")
+            summary_table.add_column("Tgt Shares", justify="right", style="neutral_aqua")
+            summary_table.add_column("MTM %", justify="right", style="neutral_blue")
+            summary_table.add_column("Tgt %", justify="right", style="neutral_aqua")
             summary_table.add_column("Call Rem Qty", justify="right", style="magenta")
             summary_table.add_column("Put Rem Qty", justify="right", style="magenta")
             summary_table.add_column("Stk PnL", justify="right", style="bold red")
@@ -582,6 +596,9 @@ class IBKRModule(Module):
                 symbol,
                 f"{book_price:.2f}",
                 f"{stock_rem_qty_sum:.0f}",
+                f"{target_shares:,}" if target_shares != 0 else "",
+                f"{mtm_pct:.2f}%" if mtm_pct != 0 else "",
+                f"{target_pct:.2f}%" if target_pct != 0 else "",
                 f"{call_rem_qty_sum:.0f}",
                 f"{put_rem_qty_sum:.0f}",
                 f"{stock_pnl_sum:.2f}",
