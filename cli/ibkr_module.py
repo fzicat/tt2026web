@@ -1,4 +1,5 @@
 import csv
+import io
 from pathlib import Path
 
 import pandas as pd
@@ -360,6 +361,7 @@ class IBKRModule(Module):
         - LC  | list call   > List all positions (by Call qty)
         - LP  | list put    > List all positions (by Put qty)
         - LZ  | list total  > List all positions (by Total Realized PnL)
+        - CSV | list csv    > Print positions as CSV (sorted by Symbol)
         - T   | trades     > List trades (last 7 days)
         - TT  | trades all > List all trades
         - R   | reload     > Reload trades from DB
@@ -414,6 +416,8 @@ class IBKRModule(Module):
             self.list_all_positions(order_by='p_qty', ascending=True)
         elif cmd in ['lz', 'list total']:
             self.list_all_positions(order_by='t_pnl', ascending=False)
+        elif cmd in ['csv', 'list csv']:
+            self.list_positions_csv()
         elif cmd == 'e' or cmd == 'edit' or cmd.startswith('e ') or cmd.startswith('edit '):
             parts = command.split()
             if len(parts) >= 2:
@@ -1251,6 +1255,96 @@ class IBKRModule(Module):
             
         except Exception as e:
             self.output_content = f"[error]Error listing all positions: {e}[/]"
+
+    def list_positions_csv(self):
+        try:
+            if self.trades_df.empty:
+                self.output_content = "[info]No trades loaded.[/]"
+                return
+
+            data_rows = []
+            for symbol, group in self.trades_df.groupby('underlyingSymbol'):
+                stock_df = group[~group['putCall'].isin(['C', 'P'])]
+                call_df = group[group['putCall'] == 'C']
+                put_df = group[group['putCall'] == 'P']
+
+                stock_credit_sum = stock_df['credit'].sum() if not stock_df.empty else 0.0
+                stock_rem_qty_sum = stock_df['remaining_qty'].sum() if not stock_df.empty else 0.0
+                book_price = (stock_credit_sum / stock_rem_qty_sum) if stock_rem_qty_sum else 0.0
+                value = stock_credit_sum * -1
+                mtm = stock_df['mtm_value'].sum() + call_df['mtm_value'].sum() + put_df['mtm_value'].sum()
+                share_price = stock_df['mtm_price'].max() if not stock_df.empty else 0.0
+                unrlzd_pnl = group['unrealized_pnl'].sum()
+                s_qty = stock_df['remaining_qty'].sum()
+                c_qty = call_df['remaining_qty'].sum()
+                p_qty = put_df['remaining_qty'].sum()
+                s_pnl = stock_df['realized_pnl'].sum()
+                c_pnl = call_df['realized_pnl'].sum()
+                p_pnl = put_df['realized_pnl'].sum()
+
+                if any(x != 0 for x in [value, mtm, s_qty, c_qty, p_qty, s_pnl, c_pnl, p_pnl]):
+                    data_rows.append({
+                        'symbol': symbol,
+                        'book_price': book_price,
+                        'value': value,
+                        'mtm': mtm,
+                        'unrlzd_pnl': unrlzd_pnl,
+                        's_qty': s_qty,
+                        'c_qty': c_qty,
+                        'p_qty': p_qty,
+                        's_pnl': s_pnl,
+                        'c_pnl': c_pnl,
+                        'p_pnl': p_pnl,
+                        'target_pct': self.target_percent.get(symbol, 0.0),
+                        'share_price': share_price,
+                    })
+
+            total_mtm = sum(r['mtm'] for r in data_rows)
+            data_rows.sort(key=lambda x: x['symbol'])
+
+            buf = io.StringIO()
+            writer = csv.writer(buf)
+            writer.writerow([
+                "Symbol", "Book Price", "Book Value", "MTM Value", "MTM %",
+                "Tgt %", "Tgt S", "Diff", "Unrlzd PnL", "Qty", "Call", "Put",
+                "S Rlzd PnL", "C Rlzd PnL", "P Rlzd PnL", "T Rlzd PnL",
+            ])
+
+            def num(v, fmt="{:.2f}"):
+                return fmt.format(v) if v else ""
+
+            for r in data_rows:
+                mtm_pct = r['mtm'] / total_mtm * 100 if total_mtm and r['mtm'] else 0
+                tgt = r['target_pct']
+                sp = r['share_price']
+                tgt_s = round(total_mtm * tgt / 100 / sp) if tgt and sp else 0
+                diff = mtm_pct - tgt
+                t_pnl = r['s_pnl'] + r['c_pnl'] + r['p_pnl']
+                writer.writerow([
+                    r['symbol'],
+                    num(r['book_price'] * -1),
+                    num(r['value']),
+                    num(r['mtm']),
+                    num(mtm_pct),
+                    num(tgt),
+                    tgt_s if tgt_s else "",
+                    num(diff),
+                    num(r['unrlzd_pnl']),
+                    f"{r['s_qty']:.0f}" if r['s_qty'] else "",
+                    f"{r['c_qty']:.0f}" if r['c_qty'] else "",
+                    f"{r['p_qty']:.0f}" if r['p_qty'] else "",
+                    num(r['s_pnl']),
+                    num(r['c_pnl']),
+                    num(r['p_pnl']),
+                    num(t_pnl),
+                ])
+
+            self.app.console.clear()
+            self.app.console.print(buf.getvalue(), markup=False, highlight=False)
+            self.app.skip_render = True
+
+        except Exception as e:
+            self.output_content = f"[error]Error generating CSV: {e}[/]"
 
     def get_output(self):
         return self.output_content
