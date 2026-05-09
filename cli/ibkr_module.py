@@ -351,11 +351,15 @@ class IBKRModule(Module):
         - PF  | performance > Year performance in $ and %
         - SD  | stats day  > Daily PnL Stats
         - SW  | stats week > Weekly PnL Stats
-        - LM  | list mtm   > List all positions (by MTM)
+        - LM  | list mtm    > List all positions (by MTM)
         - LV  | list value  > List all positions (by Value)
         - LS  | list symbol > List all positions (by Symbol)
         - LQ  | list qty    > List all positions (by Quantity)
         - LD  | list diff   > List all positions (by Diff)
+        - LT  | list target > List all positions (by Tgt S)
+        - LC  | list call   > List all positions (by Call qty)
+        - LP  | list put    > List all positions (by Put qty)
+        - LZ  | list total  > List all positions (by Total Realized PnL)
         - T   | trades     > List trades (last 7 days)
         - TT  | trades all > List all trades
         - R   | reload     > Reload trades from DB
@@ -402,6 +406,14 @@ class IBKRModule(Module):
             self.list_all_positions(order_by='s_qty', ascending=False)
         elif cmd in ['ld', 'list diff']:
             self.list_all_positions(order_by='diff', ascending=True)
+        elif cmd in ['lt', 'list target']:
+            self.list_all_positions(order_by='tgt_s', ascending=False)
+        elif cmd in ['lc', 'list call']:
+            self.list_all_positions(order_by='c_qty', ascending=True)
+        elif cmd in ['lp', 'list put']:
+            self.list_all_positions(order_by='p_qty', ascending=True)
+        elif cmd in ['lz', 'list total']:
+            self.list_all_positions(order_by='t_pnl', ascending=False)
         elif cmd == 'e' or cmd == 'edit' or cmd.startswith('e ') or cmd.startswith('edit '):
             parts = command.split()
             if len(parts) >= 2:
@@ -1065,21 +1077,29 @@ class IBKRModule(Module):
             # Usually IBKR report provides it.
             groups = self.trades_df.groupby('underlyingSymbol')
             
+            def _hdr(label, ch):
+                idx = label.lower().find(ch.lower())
+                if idx < 0:
+                    return f"[bold underline]{ch}[/] {label}"
+                return f"{label[:idx]}[bold underline]{label[idx]}[/]{label[idx+1:]}"
+
             table = Table(title="All Positions", expand=False, row_styles=["", "on #1d2021"])
-            table.add_column("Symbol", style="neutral_yellow")
-            table.add_column("Book Value", justify="right", style="neutral_yellow")
-            table.add_column("MTM Value", justify="right", style="neutral_blue")
+            table.add_column(_hdr("Symbol", "s"), style="neutral_yellow")
+            table.add_column("Book Price", justify="right", style="dark4")
+            table.add_column(_hdr("Book Value", "v"), justify="right", style="neutral_yellow")
+            table.add_column(_hdr("MTM Value", "m"), justify="right", style="neutral_blue")
             table.add_column("MTM %", justify="right", style="neutral_blue")
             table.add_column("Tgt %", justify="right", style="neutral_aqua")
-            table.add_column("Tgt S", justify="right", style="neutral_aqua")
-            table.add_column("Diff", justify="right", style="light4")
+            table.add_column(_hdr("Tgt S", "t"), justify="right", style="neutral_aqua")
+            table.add_column(_hdr("Diff", "d"), justify="right", style="light4")
             table.add_column("Unrlzd PnL", justify="right")
-            table.add_column("Shares", justify="right", style="neutral_purple")
-            table.add_column("Call", justify="right", style="neutral_purple")
-            table.add_column("Put", justify="right", style="neutral_purple")
+            table.add_column(_hdr("Qty", "q"), justify="right", style="neutral_purple")
+            table.add_column(_hdr("Call", "c"), justify="right", style="neutral_purple")
+            table.add_column(_hdr("Put", "p"), justify="right", style="neutral_purple")
             table.add_column("S Rlzd PnL", justify="right")
             table.add_column("C Rlzd PnL", justify="right")
             table.add_column("P Rlzd PnL", justify="right")
+            table.add_column(_hdr("T Rlzd PnL", "z"), justify="right")
 
             data_rows = []
 
@@ -1089,7 +1109,10 @@ class IBKRModule(Module):
                  call_df = group[group['putCall'] == 'C']
                  put_df = group[group['putCall'] == 'P']
 
-                 value = stock_df['credit'].sum() * -1
+                 stock_credit_sum = stock_df['credit'].sum() if not stock_df.empty else 0.0
+                 stock_rem_qty_sum = stock_df['remaining_qty'].sum() if not stock_df.empty else 0.0
+                 book_price = (stock_credit_sum / stock_rem_qty_sum) if stock_rem_qty_sum else 0.0
+                 value = stock_credit_sum * -1
                  stock_mtm = stock_df['mtm_value'].sum()
                  call_mtm = call_df['mtm_value'].sum()
                  put_mtm = put_df['mtm_value'].sum()
@@ -1111,6 +1134,7 @@ class IBKRModule(Module):
                  if any(x != 0 for x in [value, mtm, s_qty, c_qty, p_qty, s_pnl, c_pnl, p_pnl]):
                      data_rows.append({
                         'symbol': symbol,
+                        'book_price': book_price,
                         'value': value,
                         'mtm': mtm,
                         'unrlzd_pnl': unrlzd_pnl,
@@ -1133,6 +1157,12 @@ class IBKRModule(Module):
                 data_rows.sort(key=lambda x: x['symbol'], reverse=not ascending)
             elif order_by == 's_qty':
                 data_rows.sort(key=lambda x: x['s_qty'], reverse=not ascending)
+            elif order_by == 'c_qty':
+                data_rows.sort(key=lambda x: (x['c_qty'], x['p_qty']), reverse=not ascending)
+            elif order_by == 'p_qty':
+                data_rows.sort(key=lambda x: (x['p_qty'], x['c_qty']), reverse=not ascending)
+            elif order_by == 't_pnl':
+                data_rows.sort(key=lambda x: x['s_pnl'] + x['c_pnl'] + x['p_pnl'], reverse=not ascending)
 
 
             # Calculate totals
@@ -1150,6 +1180,12 @@ class IBKRModule(Module):
             # Sort by diff (needs total_mtm, so done after totals)
             if order_by == 'diff':
                 data_rows.sort(key=lambda x: (x['mtm'] / total_mtm * 100 if total_mtm != 0 and x['mtm'] != 0 else 0) - x['target_pct'], reverse=not ascending)
+            elif order_by == 'tgt_s':
+                def _tgt_s(x):
+                    if x['target_pct'] and x['share_price']:
+                        return round(total_mtm * x['target_pct'] / 100 / x['share_price'])
+                    return 0
+                data_rows.sort(key=_tgt_s, reverse=not ascending)
 
             def fmt_pnl(val):
                 if val == 0: return ""
@@ -1169,8 +1205,10 @@ class IBKRModule(Module):
                 
                 mtm_pct_str = f"{mtm_pct:.2f}%" if mtm_pct != 0 else ""
                 
+                t_pnl = row['s_pnl'] + row['c_pnl'] + row['p_pnl']
                 table.add_row(
                     str(row['symbol']),
+                    f"{row['book_price'] * -1:.2f}" if row['book_price'] != 0 else "",
                     f"{row['value']:,.2f}" if row['value'] != 0 else "",
                     f"{row['mtm']:,.2f}" if row['mtm'] != 0 else "",
                     mtm_pct_str,
@@ -1183,13 +1221,15 @@ class IBKRModule(Module):
                     f"{row['p_qty']:.0f}" if row['p_qty'] != 0 else "",
                     fmt_pnl(row['s_pnl']),
                     fmt_pnl(row['c_pnl']),
-                    fmt_pnl(row['p_pnl'])
+                    fmt_pnl(row['p_pnl']),
+                    fmt_pnl(t_pnl)
                 )
             
             # Add totals row
             table.add_section()
             table.add_row(
                 "TOTAL",
+                "",  # Book Price - no aggregate
                 f"{total_value:,.2f}",
                 f"{total_mtm:,.2f}",
                 f"{total_mtm / total_mtm * 100:.2f}%" if total_mtm != 0 else "",
@@ -1203,6 +1243,7 @@ class IBKRModule(Module):
                 fmt_pnl(total_s_pnl),
                 fmt_pnl(total_c_pnl),
                 fmt_pnl(total_p_pnl),
+                fmt_pnl(total_s_pnl + total_c_pnl + total_p_pnl),
                 style="bold"
             )
             
