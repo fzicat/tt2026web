@@ -1,4 +1,5 @@
 import pandas as pd
+from rich.table import Table
 
 from base_module import SubModule
 
@@ -58,8 +59,10 @@ class StatsSubModule(SubModule):
         - PD  | plot day   > Plot daily PnL (bar)
         - PW  | plot week  > Plot weekly PnL (bar)
         - PC  | plot cum   > Plot cumulative PnL (line)
+        - OP  | outstanding premium > Plot outstanding short option premium (bar)
         - H   | help       > Show this message
-        - Q   | quit       > Return to IBKR module'''
+        - Q   | quit       > Return to IBKR module
+        - QQ  | quit quit  > Exit the application'''
         elif cmd in ('d', 'day', 'daily'):
             self._stats_daily_table()
         elif cmd in ('w', 'week', 'weekly'):
@@ -70,6 +73,10 @@ class StatsSubModule(SubModule):
             self._plot_weekly()
         elif cmd in ('pc', 'plot cum', 'plot cumulative'):
             self._plot_cumulative()
+        elif cmd in ('op', 'outstanding premium'):
+            self._plot_outstanding_premium()
+        elif cmd in ('qq', 'quit quit'):
+            self.app.quit()
         elif cmd == "":
             pass
         else:
@@ -170,6 +177,113 @@ class StatsSubModule(SubModule):
             ax.grid(True, axis='y')
             fig.autofmt_xdate()
             self._show("Weekly PnL")
+        except Exception as e:
+            self.output_content = f"[error]Plot error: {e}[/]"
+
+    def _outstanding_premium_series(self):
+        df = self.parent.trades_df
+        if df.empty:
+            return pd.DataFrame()
+        df = df.copy()
+        df['dateTime'] = pd.to_datetime(df['dateTime']).dt.tz_localize(None)
+        df = df[df['putCall'].isin(['C', 'P'])].sort_values('dateTime')
+        if df.empty:
+            return pd.DataFrame()
+
+        inventory = {}
+        start = pd.Timestamp('2026-01-01').normalize()
+        end = pd.Timestamp.now().normalize()
+        all_dates = pd.date_range(start=start, end=end, freq='D')
+        all_dates = all_dates[all_dates.dayofweek < 5]
+
+        events = df.to_dict('records')
+        ev_idx = 0
+        rows = []
+
+        for d in all_dates:
+            cutoff = d + pd.Timedelta(days=1)
+            while ev_idx < len(events) and events[ev_idx]['dateTime'] < cutoff:
+                t = events[ev_idx]
+                ev_idx += 1
+                symbol = t['symbol']
+                try:
+                    qty = float(t['quantity'])
+                    price = float(t['tradePrice'])
+                except (TypeError, ValueError):
+                    continue
+                mult = t.get('multiplier')
+                mult = float(mult) if mult not in (None, '', 0) else 100.0
+                put_call = t['putCall']
+                oc = t.get('openCloseIndicator')
+
+                if oc == 'O' and qty < 0:
+                    inventory.setdefault(symbol, {'put_call': put_call, 'lots': []})
+                    inventory[symbol]['lots'].append({'qty': abs(qty), 'premium_per_unit': price * mult})
+                elif oc == 'C' and qty > 0 and symbol in inventory:
+                    remaining = qty
+                    lots = inventory[symbol]['lots']
+                    while remaining > 0 and lots:
+                        lot = lots[0]
+                        if lot['qty'] <= remaining + 1e-9:
+                            remaining -= lot['qty']
+                            lots.pop(0)
+                        else:
+                            lot['qty'] -= remaining
+                            remaining = 0
+
+            call_prem = 0.0
+            put_prem = 0.0
+            for info in inventory.values():
+                total = sum(l['qty'] * l['premium_per_unit'] for l in info['lots'])
+                if info['put_call'] == 'C':
+                    call_prem += total
+                else:
+                    put_prem += total
+            rows.append({'date': d, 'call': call_prem, 'put': put_prem})
+
+        return pd.DataFrame(rows).set_index('date')
+
+    def _plot_outstanding_premium(self):
+        try:
+            data = self._outstanding_premium_series()
+            if data.empty:
+                self.output_content = "[info]No data to plot.[/]"
+                return
+
+            table = Table(title="Outstanding Short Option Premium", expand=False)
+            table.add_column("Date", style="cyan")
+            table.add_column("Call", justify="right", style="red")
+            table.add_column("Put", justify="right", style="green")
+            table.add_column("Total", justify="right", style="bold yellow")
+            for d, row in data.iterrows():
+                total = row['call'] + row['put']
+                table.add_row(
+                    d.strftime("%Y-%m-%d"),
+                    f"{row['call']:,.2f}" if row['call'] else "-",
+                    f"{row['put']:,.2f}" if row['put'] else "-",
+                    f"{total:,.2f}" if total else "-",
+                )
+            self.app.console.print(table)
+            self.app.skip_render = True
+
+            import matplotlib.pyplot as plt
+            import numpy as np
+            apply_gruvbox_style()
+            fig, ax = plt.subplots(figsize=(13, 5))
+            x = np.arange(len(data.index))
+            width = 0.4
+            ax.bar(x - width / 2, data['put'].values, width=width,
+                   color=GRUVBOX['green'], edgecolor=GRUVBOX['bg_soft'], linewidth=0.5, label='Put')
+            ax.bar(x + width / 2, data['call'].values, width=width,
+                   color=GRUVBOX['red'], edgecolor=GRUVBOX['bg_soft'], linewidth=0.5, label='Call')
+            ax.set_title("Outstanding Short Option Premium")
+            ax.set_ylabel("Premium ($)")
+            step = max(1, len(x) // 20)
+            ax.set_xticks(x[::step])
+            ax.set_xticklabels([d.strftime('%Y-%m-%d') for d in data.index[::step]], rotation=45, ha='right')
+            ax.grid(True, axis='y')
+            ax.legend()
+            self._show("Outstanding Premium")
         except Exception as e:
             self.output_content = f"[error]Plot error: {e}[/]"
 
