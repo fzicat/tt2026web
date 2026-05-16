@@ -1,3 +1,8 @@
+import os
+import sys
+import select
+import termios
+import tty
 import pandas as pd
 from rich.table import Table
 from rich.console import Group, Console
@@ -14,7 +19,8 @@ class FBNModule(Module):
         self.monthly_df = pd.DataFrame()
         self.yearly_df = pd.DataFrame()
         self.output_content = ""
-        
+        self.account_filter = []
+
         self.load_fbn_data()
 
         self.accounts = [
@@ -31,88 +37,63 @@ class FBNModule(Module):
 
     def load_fbn_data(self):
         self.df = fbn_db.fetch_fbn_data()
-        
+
         if not self.df.empty:
-            # Ensure date is datetime
             self.df['date'] = pd.to_datetime(self.df['date'])
 
             # Apply Currency Conversion (USD -> CAD)
-            # Multiply columns by rate where currency is 'USD'
             cols_to_convert = ['investment', 'deposit', 'asset', 'fee', 'dividend', 'interest', 'tax', 'other', 'cash', 'distribution']
             mask = self.df['currency'] == 'USD'
-            
             for col in cols_to_convert:
                 self.df.loc[mask, col] = self.df.loc[mask, col] * self.df.loc[mask, 'rate']
-            
-            # Group by date for monthly aggregation
-            # We want to sum specific columns across all accounts/portfolios for the monthly view
-            monthly_groups = self.df.groupby('date')
-            
-            agg_data = []
-            for date, group in monthly_groups:
-                deposit = group['deposit'].sum()
-                asset = group['asset'].sum()
-                fee = group['fee'].sum()
-                
-                agg_data.append({
-                    'date': date,
-                    'deposit': deposit,
-                    'asset': asset,
-                    'fee': fee
-                })
-            
-            self.monthly_df = pd.DataFrame(agg_data)
-            self.monthly_df = self.monthly_df.sort_values(by='date')
-            
-            # Calculate PnL and Pct
-            # pnl = asset - deposit - prev_asset
-            # pct = pnl / prev_asset
-            
-            self.monthly_df['prev_asset'] = self.monthly_df['asset'].shift(1).fillna(0.0)
-            
-            # First month logic: pnl = asset - deposit (assuming prev_asset is 0)
-            # But usually first month starts from 0 or initial deposit. 
-            # If prev_asset is 0, we can't divide by it for pct.
-            
-            self.monthly_df['pnl'] = self.monthly_df['asset'] - self.monthly_df['deposit'] - self.monthly_df['prev_asset']
-            
-            # Avoid division by zero
-            self.monthly_df['pct'] = self.monthly_df.apply(
-                lambda row: (row['pnl'] / row['prev_asset']) * 100 if row['prev_asset'] != 0 else 0.0, 
-                axis=1
-            )
-            
-            # Prepare Yearly Data
-            temp_df = self.monthly_df.copy()
-            temp_df['year'] = temp_df['date'].dt.year
-            
-            yearly_groups = temp_df.groupby('year')
-            yearly_agg = []
-            
-            for year, group in yearly_groups:
-                deposit = group['deposit'].sum()
-                fee = group['fee'].sum()
-                asset = group.iloc[-1]['asset']
-                
-                yearly_agg.append({
-                    'year': year,
-                    'deposit': deposit,
-                    'asset': asset,
-                    'fee': fee
-                })
-                
-            self.yearly_df = pd.DataFrame(yearly_agg)
-            if not self.yearly_df.empty:
-                self.yearly_df = self.yearly_df.sort_values('year')
-                self.yearly_df['prev_asset'] = self.yearly_df['asset'].shift(1).fillna(0.0)
-                self.yearly_df['pnl'] = self.yearly_df['asset'] - self.yearly_df['deposit'] - self.yearly_df['prev_asset']
-                self.yearly_df['pct'] = self.yearly_df.apply(
-                    lambda row: (row['pnl'] / row['prev_asset']) * 100 if row['prev_asset'] != 0 else 0.0, 
-                    axis=1
-                )
-            
+
+            self.monthly_df, self.yearly_df = self._aggregate(self.df)
         else:
             self.app.console.print("[error]No FBN data found.[/]")
+
+    def _filtered_df(self):
+        if self.df.empty or not self.account_filter:
+            return self.df
+        return self.df[self.df['account'].isin(self.account_filter)]
+
+    def _aggregate(self, df):
+        """Return (monthly_df, yearly_df) aggregated from the given currency-converted df."""
+        if df.empty:
+            return pd.DataFrame(), pd.DataFrame()
+
+        monthly_df = (
+            df.groupby('date', as_index=False)[['deposit', 'asset', 'fee']]
+            .sum()
+            .sort_values('date')
+            .reset_index(drop=True)
+        )
+        monthly_df['prev_asset'] = monthly_df['asset'].shift(1).fillna(0.0)
+        monthly_df['pnl'] = monthly_df['asset'] - monthly_df['deposit'] - monthly_df['prev_asset']
+        monthly_df['pct'] = monthly_df.apply(
+            lambda row: (row['pnl'] / row['prev_asset']) * 100 if row['prev_asset'] != 0 else 0.0,
+            axis=1,
+        )
+
+        temp_df = monthly_df.copy()
+        temp_df['year'] = temp_df['date'].dt.year
+        yearly_agg = []
+        for year, group in temp_df.groupby('year'):
+            yearly_agg.append({
+                'year': year,
+                'deposit': group['deposit'].sum(),
+                'asset': group.iloc[-1]['asset'],
+                'fee': group['fee'].sum(),
+            })
+        yearly_df = pd.DataFrame(yearly_agg)
+        if not yearly_df.empty:
+            yearly_df = yearly_df.sort_values('year').reset_index(drop=True)
+            yearly_df['prev_asset'] = yearly_df['asset'].shift(1).fillna(0.0)
+            yearly_df['pnl'] = yearly_df['asset'] - yearly_df['deposit'] - yearly_df['prev_asset']
+            yearly_df['pct'] = yearly_df.apply(
+                lambda row: (row['pnl'] / row['prev_asset']) * 100 if row['prev_asset'] != 0 else 0.0,
+                axis=1,
+            )
+        return monthly_df, yearly_df
 
     def handle_command(self, command):
         cmd = command.lower().strip()
@@ -126,8 +107,11 @@ class FBNModule(Module):
             self.output_content = '''FBN commands:
         - LM  | list monthly > List monthly stats
         - LY  | list yearly  > List yearly stats
+        - FA  | filter account > Multi-select account filter
         - Q   | quit         > Return to main menu
         - QQ  | quit quit    > Exit the application'''
+        elif cmd in ['fa', 'filter account']:
+            self.filter_accounts()
         elif cmd in ['lm', 'list monthly']:
             self.list_monthly()
         elif cmd in ['lma', 'list monthly assets']:
@@ -145,11 +129,13 @@ class FBNModule(Module):
 
     def list_monthly(self):
         try:
-            if self.monthly_df.empty:
+            monthly_df, _ = self._aggregate(self._filtered_df())
+            if monthly_df.empty:
                 self.output_content = "[info]No monthly data available.[/]"
                 return
 
-            table = Table(title="FBN Monthly Stats", expand=False)
+            title_suffix = f" — {', '.join(self.account_filter)}" if self.account_filter else ""
+            table = Table(title=f"FBN Monthly Stats{title_suffix}", expand=False)
             table.add_column("Date", style="cyan")
             table.add_column("Deposit", justify="right")
             table.add_column("Asset", justify="right", style="magenta")
@@ -157,7 +143,7 @@ class FBNModule(Module):
             table.add_column("PnL", justify="right")
             table.add_column("Pct", justify="right")
 
-            for _, row in self.monthly_df.iterrows():
+            for _, row in monthly_df.iterrows():
                 date_str = row['date'].strftime('%Y-%m-%d')
                 
                 deposit = row['deposit']
@@ -194,11 +180,13 @@ class FBNModule(Module):
 
     def list_yearly(self):
         try:
-            if self.yearly_df.empty:
+            _, yearly_df = self._aggregate(self._filtered_df())
+            if yearly_df.empty:
                 self.output_content = "[info]No yearly data available.[/]"
                 return
 
-            table = Table(title="FBN Yearly Stats", expand=False)
+            title_suffix = f" — {', '.join(self.account_filter)}" if self.account_filter else ""
+            table = Table(title=f"FBN Yearly Stats{title_suffix}", expand=False)
             table.add_column("Year", style="cyan")
             table.add_column("Deposit", justify="right")
             table.add_column("Asset", justify="right", style="magenta")
@@ -206,7 +194,7 @@ class FBNModule(Module):
             table.add_column("PnL", justify="right")
             table.add_column("Pct", justify="right")
 
-            for _, row in self.yearly_df.iterrows():
+            for _, row in yearly_df.iterrows():
                 year_str = str(row['year'])
                 
                 deposit = row['deposit']
@@ -229,10 +217,10 @@ class FBNModule(Module):
                 )
 
             # Calculate Totals
-            total_deposit = self.yearly_df['deposit'].sum()
-            total_fee = self.yearly_df['fee'].sum()
-            total_pnl = self.yearly_df['pnl'].sum()
-            current_asset = self.yearly_df.iloc[-1]['asset']
+            total_deposit = yearly_df['deposit'].sum()
+            total_fee = yearly_df['fee'].sum()
+            total_pnl = yearly_df['pnl'].sum()
+            current_asset = yearly_df.iloc[-1]['asset']
             
             total_pnl_style = "bold blue" if total_pnl > 0 else "bold orange1" if total_pnl < 0 else "dim"
             
@@ -495,6 +483,93 @@ class FBNModule(Module):
         
         fbn_db.save_account_entry(entry_data)
         self.app.console.print(f"[success]Saved entry for {acc_name}[/]")
+
+    def get_status(self):
+        base = f"{self.emoji} {self.name}"
+        if self.account_filter:
+            return f"{base} · Accounts: {', '.join(self.account_filter)}"
+        return base
+
+    def filter_accounts(self):
+        if self.df.empty or 'account' not in self.df.columns:
+            self.output_content = "[info]No accounts available to filter.[/]"
+            return
+
+        accounts = sorted(a for a in self.df['account'].dropna().unique().tolist())
+        if not accounts:
+            self.output_content = "[info]No accounts available to filter.[/]"
+            return
+
+        result = self._multi_select(
+            accounts,
+            preselected=self.account_filter,
+            title="Select accounts to filter on",
+        )
+        self.app.skip_render = True
+
+        if result is None:
+            self.output_content = ""
+            return
+
+        self.account_filter = sorted(result)
+        if self.account_filter:
+            self.output_content = f"[success]Account filter set: {', '.join(self.account_filter)}[/]"
+        else:
+            self.output_content = "[success]Account filter cleared.[/]"
+        self.app.skip_render = False
+
+    def _multi_select(self, options, preselected=None, title="Select"):
+        """Interactive multi-select. Returns list of chosen options, or None if cancelled."""
+        if not sys.stdin.isatty():
+            self.app.console.print("[error]Interactive picker requires a TTY.[/]")
+            return None
+
+        selected = set(preselected or [])
+        cursor = 0
+
+        def render():
+            self.app.console.clear()
+            self.app.console.print(f"[bold]{title}[/]")
+            self.app.console.print("[dim]↑/↓ navigate · Space toggle · Enter confirm · Esc/q cancel[/]")
+            self.app.console.print()
+            for i, opt in enumerate(options):
+                mark = "[X]" if opt in selected else "[ ]"
+                prefix = "›" if i == cursor else " "
+                style = "bright_yellow" if i == cursor else "base"
+                self.app.console.print(f"[{style}]{prefix} {mark} {opt}[/]")
+
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        try:
+            while True:
+                render()
+                tty.setraw(fd)
+                try:
+                    b = os.read(fd, 1)
+                    if b == b'\x1b':
+                        r, _, _ = select.select([fd], [], [], 0.05)
+                        if r:
+                            b += os.read(fd, 2)
+                    ch = b.decode('utf-8', errors='replace')
+                finally:
+                    termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+                if ch == '\x1b[A':
+                    cursor = (cursor - 1) % len(options)
+                elif ch == '\x1b[B':
+                    cursor = (cursor + 1) % len(options)
+                elif ch == ' ':
+                    opt = options[cursor]
+                    if opt in selected:
+                        selected.remove(opt)
+                    else:
+                        selected.add(opt)
+                elif ch in ('\r', '\n'):
+                    return [o for o in options if o in selected]
+                elif ch in ('\x1b', 'q', '\x03'):
+                    return None
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
     def get_output(self):
         return self.output_content

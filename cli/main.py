@@ -154,9 +154,8 @@ class TradeToolsApp:
         command = self.console.input("[bright_orange]❯[/] ")
 
         # After Enter, cursor sits at start of the bottom-line row.
-        # Drop 3 lines below (with newlines so the terminal scrolls if needed)
-        # to clear the horizontal line and leave breathing room above output.
-        sys.stdout.write("\n\n\n")
+        # Drop 2 lines below to clear the horizontal line and leave breathing room above output.
+        sys.stdout.write("\n\n")
         sys.stdout.flush()
         return command
 
