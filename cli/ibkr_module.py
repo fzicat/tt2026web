@@ -502,6 +502,8 @@ class IBKRModule(Module):
             self.list_all_positions(order_by='t_pnl', ascending=False)
         elif cmd in ['lb', 'list basket']:
             self.list_positions_by_basket()
+        elif cmd in ['csp', 'cash secured put']:
+            self.list_csp()
         elif cmd in ['csv', 'list csv']:
             self.list_positions_csv()
         elif cmd == 'e' or cmd == 'edit' or cmd.startswith('e ') or cmd.startswith('edit '):
@@ -1653,6 +1655,120 @@ class IBKRModule(Module):
 
         except Exception as e:
             self.output_content = f"[error]Error listing positions by basket: {e}[/]"
+
+    def list_csp(self):
+        try:
+            if self.trades_df.empty:
+                self.output_content = "[info]No trades loaded.[/]"
+                return
+
+            groups = self.trades_df.groupby('underlyingSymbol')
+            data_rows = []
+
+            for symbol, group in groups:
+                stock_df = group[~group['putCall'].isin(['C', 'P'])]
+                call_df = group[group['putCall'] == 'C']
+                put_df = group[group['putCall'] == 'P']
+
+                stock_credit_sum = stock_df['credit'].sum() if not stock_df.empty else 0.0
+                stock_rem_qty_sum = stock_df['remaining_qty'].sum() if not stock_df.empty else 0.0
+                book_price = (stock_credit_sum / stock_rem_qty_sum) if stock_rem_qty_sum else 0.0
+                value = stock_credit_sum * -1
+                mtm = stock_df['mtm_value'].sum() + call_df['mtm_value'].sum() + put_df['mtm_value'].sum()
+                share_price = stock_df['mtm_price'].max() if not stock_df.empty else 0.0
+
+                s_qty = stock_df['remaining_qty'].sum()
+                c_qty = call_df['remaining_qty'].sum()
+                p_qty = put_df['remaining_qty'].sum()
+
+                # CSP: sum over short put rows of |remaining_qty| * strike * 100
+                csp = 0.0
+                if not put_df.empty:
+                    short_puts = put_df[put_df['remaining_qty'] < 0]
+                    if not short_puts.empty:
+                        csp = (-short_puts['remaining_qty'] * short_puts['strike'] * 100).sum()
+
+                if any(x != 0 for x in [value, mtm, s_qty, c_qty, p_qty, csp]):
+                    data_rows.append({
+                        'symbol': symbol,
+                        'book_price': book_price,
+                        'value': value,
+                        'mtm': mtm,
+                        's_qty': s_qty,
+                        'c_qty': c_qty,
+                        'p_qty': p_qty,
+                        'target_pct': self.target_percent.get(symbol, 0.0),
+                        'share_price': share_price,
+                        'csp': csp,
+                    })
+
+            data_rows.sort(key=lambda x: x['csp'], reverse=True)
+
+            total_value = sum(r['value'] for r in data_rows)
+            total_mtm = sum(r['mtm'] for r in data_rows)
+            total_s_qty = sum(r['s_qty'] for r in data_rows)
+            total_c_qty = sum(r['c_qty'] for r in data_rows)
+            total_p_qty = sum(r['p_qty'] for r in data_rows)
+            total_target_pct = sum(r['target_pct'] for r in data_rows)
+            total_csp = sum(r['csp'] for r in data_rows)
+
+            table = Table(title="Cash Secured Put", expand=False, row_styles=["", "on #1d2021"])
+            table.add_column("Symbol", style="neutral_yellow")
+            table.add_column("Book Price", justify="right", style="dark4")
+            table.add_column("Book Value", justify="right", style="neutral_yellow")
+            table.add_column("MTM Value", justify="right", style="neutral_blue")
+            table.add_column("MTM %", justify="right", style="neutral_blue")
+            table.add_column("Tgt %", justify="right", style="neutral_aqua")
+            table.add_column("Qty", justify="right", style="neutral_purple")
+            table.add_column("Tgt S", justify="right", style="neutral_aqua")
+            table.add_column("Call", justify="right", style="neutral_purple")
+            table.add_column("Put", justify="right", style="neutral_purple")
+            table.add_column("CSP", justify="right", style="neutral_orange")
+
+            for row in data_rows:
+                mtm_pct = row['mtm'] / total_mtm * 100 if total_mtm != 0 and row['mtm'] != 0 else 0
+                target_pct = row['target_pct']
+                share_price = row['share_price']
+
+                if target_pct != 0 and share_price != 0:
+                    tgt_shares = round(total_mtm * target_pct / 100 / share_price)
+                else:
+                    tgt_shares = 0
+
+                table.add_row(
+                    str(row['symbol']),
+                    f"{row['book_price'] * -1:.2f}" if row['book_price'] != 0 else "",
+                    f"{row['value']:,.2f}" if row['value'] != 0 else "",
+                    f"{row['mtm']:,.2f}" if row['mtm'] != 0 else "",
+                    f"{mtm_pct:.2f}%" if mtm_pct != 0 else "",
+                    f"{target_pct:.2f}%" if target_pct != 0 else "",
+                    f"{row['s_qty']:.0f}" if row['s_qty'] != 0 else "",
+                    f"{tgt_shares:,}" if tgt_shares != 0 else "",
+                    f"{row['c_qty']:.0f}" if row['c_qty'] != 0 else "",
+                    f"{row['p_qty']:.0f}" if row['p_qty'] != 0 else "",
+                    f"{row['csp']:,.2f}" if row['csp'] != 0 else "",
+                )
+
+            table.add_section()
+            table.add_row(
+                "TOTAL",
+                "",
+                f"{total_value:,.2f}",
+                f"{total_mtm:,.2f}",
+                f"{total_mtm / total_mtm * 100:.2f}%" if total_mtm != 0 else "",
+                f"{total_target_pct:.2f}%" if total_target_pct != 0 else "",
+                f"{total_s_qty:.0f}",
+                "",
+                f"{total_c_qty:.0f}",
+                f"{total_p_qty:.0f}",
+                f"{total_csp:,.2f}",
+                style="bold",
+            )
+
+            self.output_content = table
+
+        except Exception as e:
+            self.output_content = f"[error]Error listing CSP positions: {e}[/]"
 
     def list_positions_csv(self):
         try:
