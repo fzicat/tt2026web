@@ -179,3 +179,22 @@ def fetch_symbol_baskets() -> dict:
     except Exception as e:
         print(f"Error fetching symbol baskets: {e}")
         return {}
+
+
+def fetch_symbol_margin_requirements() -> dict:
+    """
+    Retrieves margin requirement multipliers (0-1) per symbol.
+    Returns a dictionary {symbol: margin_requirements}
+    """
+    client = get_client()
+
+    try:
+        response = client.table('symbol_targets').select('symbol, margin_requirements').execute()
+        return {
+            row['symbol']: float(row['margin_requirements'])
+            for row in response.data
+            if row.get('margin_requirements') is not None
+        }
+    except Exception as e:
+        print(f"Error fetching symbol margin requirements: {e}")
+        return {}

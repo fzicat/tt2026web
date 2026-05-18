@@ -55,6 +55,7 @@ class IBKRModule(Module):
         # Load target percentages from database
         self.target_percent = ibkr_db.fetch_symbol_targets()
         self.symbol_basket = ibkr_db.fetch_symbol_baskets()
+        self.margin_requirements = ibkr_db.fetch_symbol_margin_requirements()
         
         self.load_trades()
 
